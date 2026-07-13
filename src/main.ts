@@ -1,16 +1,21 @@
-import { MarkdownView, Notice, Plugin, type WorkspaceLeaf } from "obsidian";
+import { MarkdownView, Plugin, type WorkspaceLeaf } from "obsidian";
 import type { EditorView } from "@codemirror/view";
 import type { Analysis } from "./core/types.d.mts";
+import type { Snapshot } from "./core/delta.d.mts";
 import { resolveLicenseTransition } from "./core/licenseTransition.mjs";
 import { snapshot } from "./core/delta.mjs";
-import type { Snapshot } from "./core/delta.d.mts";
 import { LicenseManager } from "./license/LicenseManager";
 import { PRODUCT_NAME } from "./product";
-import { DEFAULT_SETTINGS, ProseLensSettingTab, type ProseLensSettings } from "./settings";
+import { DEFAULT_SETTINGS, type ProseLensSettings } from "./settings";
+import { ProseLensSettingTab } from "./ui/SettingsTab";
 import { proseLensExtension, type EditorHost } from "./editor/proseLensExtension";
 import { ProsePanelView, VIEW_TYPE_PROSE_PANEL } from "./ui/ProsePanelView";
-import { requirePro } from "./ui/pro/ProGate";
-import { easeLabel } from "./core/readability.mjs";
+import { StatusBar } from "./ui/StatusBar";
+import { noticeFocus, noticeMarks, noticeMuted, registerCommands } from "./commands";
+import { Notice } from "obsidian";
+
+/** How long a burst of continuous setting changes is coalesced before a write. */
+const SAVE_DEBOUNCE_MS = 400;
 
 export default class ProseLensPlugin extends Plugin implements EditorHost {
 	settings: ProseLensSettings = { ...DEFAULT_SETTINGS };
@@ -18,14 +23,13 @@ export default class ProseLensPlugin extends Plugin implements EditorHost {
 	/** Bumped on every settings save; the editor extension re-runs when it changes. */
 	settingsEpoch = 0;
 
-	private statusBar: HTMLElement | null = null;
+	private statusBar: StatusBar | null = null;
 	/** The analysis of the editor the user is actually looking at. */
 	private activeAnalysis: Analysis | null = null;
 	/**
-	 * The last analysis of each open note. Switching tabs must not blank the status bar
-	 * for a note that has already been analyzed — the new editor may never fire an update,
-	 * so there would be nothing to re-publish and the panel would keep showing the previous
-	 * note's numbers. Evicted when the note is no longer open anywhere.
+	 * The last analysis of each open note. Switching tabs must not blank the status bar for a
+	 * note that has already been analyzed — the new editor may never fire an update, so there
+	 * would be nothing to re-publish. Evicted when the note is no longer open anywhere.
 	 */
 	private analyses = new Map<string, Analysis>();
 	/** Opening state per note, for the Pro revision delta. Session-scoped, never persisted. */
@@ -36,90 +40,34 @@ export default class ProseLensPlugin extends Plugin implements EditorHost {
 		await this.loadSettings();
 		await this.refreshLicense();
 
-		// The plugin IS the editor host. Passing an object literal would snapshot
-		// `settingsEpoch` as a primitive at construction time, and the extension would
-		// never see a settings change again.
+		// The plugin IS the editor host. An object literal would snapshot `settingsEpoch` as a
+		// primitive at construction, and the extension would never see a settings change again.
 		this.registerEditorExtension(proseLensExtension(this));
-
 		this.registerView(VIEW_TYPE_PROSE_PANEL, (leaf) => new ProsePanelView(leaf, this));
 
-		this.statusBar = this.addStatusBarItem();
-		this.statusBar.addClass("pl-status");
-		this.registerDomEvent(this.statusBar, "click", () => {
+		this.statusBar = new StatusBar(this.addStatusBarItem());
+		this.registerDomEvent(this.statusBar.element, "click", () => {
 			void this.activatePanel();
 		});
-		this.renderStatusBar(null);
+		this.statusBar.render(null, this.settings.showStatusBar);
 
-		this.addCommand({
-			id: "toggle-marks",
-			name: "Toggle style marks",
-			callback: () => {
-				void this.setMarksEnabled(!this.settings.marksEnabled);
-			},
-		});
-
-		this.addCommand({
-			id: "toggle-marks-this-note",
-			name: "Mute style marks in this note",
-			checkCallback: (checking) => {
-				const path = this.app.workspace.getActiveViewOfType(MarkdownView)?.file?.path;
-				if (!path) return false;
-				if (!checking) void this.toggleMuted(path);
-				return true;
-			},
-		});
-
-		this.addCommand({
-			id: "open-panel",
-			name: "Open the prose panel",
-			callback: () => {
-				void this.activatePanel();
-			},
-		});
-
-		this.addCommand({
-			id: "toggle-focus-mode",
-			name: "Toggle focus mode",
-			callback: () => {
-				requirePro({ isPro: this.settings.isPro, app: this.app }, "focus", () => {
-					void this.setFocusMode(!this.settings.focusMode);
-				});
-			},
-		});
-
-		this.registerEvent(
-			this.app.workspace.on("editor-menu", (menu, editor) => {
-				const word = wordAtCursor(editor.getLine(editor.getCursor().line), editor.getCursor().ch);
-				if (!word) return;
-				const lower = word.toLowerCase();
-				if (this.settings.ignoredWords.includes(lower)) return;
-				menu.addItem((item) =>
-					item
-						.setTitle(`Ignore "${word}" everywhere`)
-						.setIcon("eye-off")
-						.onClick(() => {
-							void this.ignoreWord(lower);
-						})
-				);
-			})
-		);
+		registerCommands(this);
 
 		this.registerEvent(
 			this.app.workspace.on("file-open", (file) => {
-				// Re-publish the note's own analysis rather than blanking. An already-open tab
-				// may never fire an editor update on the way back to it, so blanking here left
-				// the status bar empty and the panel showing the PREVIOUS note's numbers.
+				// Re-publish the note's own analysis rather than blanking. An already-open tab may
+				// never fire an editor update on the way back to it, so blanking here left the
+				// status bar empty and the panel showing the PREVIOUS note's numbers.
 				const path = file?.path ?? null;
 				this.activeAnalysis = path ? (this.analyses.get(path) ?? null) : null;
-				this.renderStatusBar(this.activeAnalysis);
+				this.statusBar?.render(this.activeAnalysis, this.settings.showStatusBar);
 				this.refreshPanels();
 			})
 		);
 
-		// Eviction belongs on layout-change, NOT on file-open: file-open fires after the leaf
-		// already holds the file, so a note being reopened is always still "open" and its
-		// stale baseline would survive the very eviction meant to clear it. layout-change
-		// fires when a leaf actually closes, which is the moment the note stops being open.
+		// Eviction belongs on layout-change, NOT file-open: file-open fires after the leaf
+		// already holds the file, so a note being reopened is always still "open" and its stale
+		// baseline would survive the very eviction meant to clear it.
 		this.registerEvent(this.app.workspace.on("layout-change", () => this.evictClosedNotes()));
 
 		this.addSettingTab(new ProseLensSettingTab(this));
@@ -129,34 +77,13 @@ export default class ProseLensPlugin extends Plugin implements EditorHost {
 		if (this.saveTimer !== null) {
 			window.clearTimeout(this.saveTimer);
 			this.saveTimer = null;
-			// FLUSH, don't drop. Dragging a slider and then quitting inside the 400ms window
-			// used to discard the write silently, and the setting reverted on next load.
-			// onunload is synchronous, so this is fire-and-forget by necessity — but issuing
-			// the write beats dropping it.
+			// FLUSH, don't drop. Dragging a slider and then quitting inside the debounce window
+			// used to discard the write silently. onunload is synchronous, so this is
+			// fire-and-forget by necessity — but issuing the write beats dropping it.
 			void this.saveData(this.settings);
 		}
 		this.baselines.clear();
 		this.analyses.clear();
-	}
-
-	/**
-	 * Drop cached state for notes that are no longer open in any leaf. Both maps are keyed
-	 * by path and would otherwise grow for the whole session — and a stale baseline would
-	 * make "since you opened this note" quietly mean "since the first time you ever opened
-	 * it", which is not what the panel says.
-	 */
-	private evictClosedNotes(): void {
-		const open = new Set<string>();
-		for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
-			const view = leaf.view;
-			if (view instanceof MarkdownView && view.file) open.add(view.file.path);
-		}
-		for (const path of [...this.analyses.keys()]) {
-			if (!open.has(path)) this.analyses.delete(path);
-		}
-		for (const path of [...this.baselines.keys()]) {
-			if (!open.has(path)) this.baselines.delete(path);
-		}
 	}
 
 	// --- settings -------------------------------------------------------------
@@ -164,8 +91,8 @@ export default class ProseLensPlugin extends Plugin implements EditorHost {
 	async loadSettings(): Promise<void> {
 		const loaded: unknown = await this.loadData();
 		const data = (loaded ?? {}) as Record<string, unknown>;
-		// A hostile or corrupt data.json must not be able to reach the prototype chain
-		// and forge `isPro` onto every object in the runtime.
+		// A hostile or corrupt data.json must not reach the prototype chain and forge `isPro`
+		// onto every object in the runtime.
 		if (Object.prototype.hasOwnProperty.call(data, "__proto__")) {
 			delete data["__proto__"];
 		}
@@ -183,27 +110,23 @@ export default class ProseLensPlugin extends Plugin implements EditorHost {
 		}
 		await this.saveData(this.settings);
 		this.settingsEpoch++;
-		// Public API for "re-apply editor extensions" — every open editor re-runs its
-		// analysis without this plugin ever reaching into a CodeMirror instance.
+		// Public API for "re-apply editor extensions" — every open editor re-runs its analysis
+		// without this plugin ever reaching into a CodeMirror instance.
 		this.app.workspace.updateOptions();
 		this.refreshPanels();
 	}
 
 	/**
-	 * Coalesced save, for controls that fire continuously.
-	 *
-	 * A slider fires an onChange per step and the license field fires one per keystroke.
-	 * Routing those straight to saveSettings() wrote data.json and bumped the epoch on
-	 * every one of them, and each epoch bump made every open editor re-run a whole-note
-	 * analysis. Dragging a threshold slider across its range was hundreds of writes and
-	 * hundreds of full re-analyses.
+	 * Coalesced save, for controls that fire continuously. A slider fires an onChange per step
+	 * and the license field one per keystroke; each save bumps the epoch, and each epoch bump
+	 * makes every open editor re-analyse its whole note.
 	 */
 	queueSave(): void {
 		if (this.saveTimer !== null) window.clearTimeout(this.saveTimer);
 		this.saveTimer = window.setTimeout(() => {
 			this.saveTimer = null;
 			void this.saveSettings();
-		}, 400);
+		}, SAVE_DEBOUNCE_MS);
 	}
 
 	/** Flush a queued save immediately — the settings tab calls this when it closes. */
@@ -215,10 +138,8 @@ export default class ProseLensPlugin extends Plugin implements EditorHost {
 	/**
 	 * Re-verify the stored key and apply the resulting entitlement.
 	 *
-	 * @param persistUnchanged save even when nothing moved (the settings tab passes this so a
-	 *   key the user is typing survives a restart)
-	 * @param coalesce queue the save instead of writing immediately — the license field fires
-	 *   this on every keystroke, and each immediate save re-analyses every open note
+	 * @param persistUnchanged save even when nothing moved (so a key being typed survives a restart)
+	 * @param coalesce queue the save instead of writing immediately
 	 * @returns true when Pro actually flipped — the caller re-renders on that, and only that
 	 */
 	async refreshLicense(persistUnchanged = false, coalesce = false): Promise<boolean> {
@@ -242,30 +163,31 @@ export default class ProseLensPlugin extends Plugin implements EditorHost {
 		return transition.flipped;
 	}
 
-	// --- state changes --------------------------------------------------------
+	// --- state changes (called by commands.ts) --------------------------------
 
-	private async setMarksEnabled(enabled: boolean): Promise<void> {
+	async setMarksEnabled(enabled: boolean): Promise<void> {
 		this.settings.marksEnabled = enabled;
 		await this.saveSettings();
-		new Notice(enabled ? "Style marks on." : "Style marks off.");
+		noticeMarks(enabled);
 	}
 
-	private async setFocusMode(enabled: boolean): Promise<void> {
+	async setFocusMode(enabled: boolean): Promise<void> {
 		this.settings.focusMode = enabled;
 		await this.saveSettings();
-		new Notice(enabled ? "Focus mode on." : "Focus mode off.");
+		noticeFocus(enabled);
 	}
 
-	private async toggleMuted(path: string): Promise<void> {
+	async toggleMuted(path: string): Promise<void> {
 		const muted = this.settings.mutedPaths.includes(path);
 		this.settings.mutedPaths = muted
 			? this.settings.mutedPaths.filter((entry) => entry !== path)
 			: [...this.settings.mutedPaths, path];
 		await this.saveSettings();
-		new Notice(muted ? "Marks on for this note." : "Marks muted for this note.");
+		noticeMuted(!muted);
 	}
 
-	private async ignoreWord(word: string): Promise<void> {
+	async ignoreWord(word: string): Promise<void> {
+		if (this.settings.ignoredWords.includes(word)) return;
 		this.settings.ignoredWords = [...this.settings.ignoredWords, word].sort();
 		await this.saveSettings();
 		new Notice(`${PRODUCT_NAME} will stop marking "${word}".`);
@@ -279,16 +201,15 @@ export default class ProseLensPlugin extends Plugin implements EditorHost {
 		if (path) {
 			if (analysis) this.analyses.set(path, analysis);
 			else this.analyses.delete(path);
-			// The first analysis after the note is opened becomes the delta baseline. The
-			// entry is dropped when the note is closed (evictClosedNotes), so "since you
-			// opened this note" is literally true.
+			// The first analysis after the note is opened becomes the delta baseline. The entry
+			// is dropped when the note closes, so "since you opened this note" is literally true.
 			if (analysis && !this.baselines.has(path)) {
 				this.baselines.set(path, snapshot(analysis.stats));
 			}
 		}
 		if (!this.isActiveEditor(view)) return;
 		this.activeAnalysis = analysis;
-		this.renderStatusBar(analysis);
+		this.statusBar?.render(analysis, this.settings.showStatusBar);
 		this.refreshPanels();
 	}
 
@@ -298,7 +219,6 @@ export default class ProseLensPlugin extends Plugin implements EditorHost {
 		return path !== null && this.settings.mutedPaths.includes(path);
 	}
 
-	/** The analysis the panel should render, and the baseline to measure it against. */
 	currentAnalysis(): Analysis | null {
 		return this.activeAnalysis;
 	}
@@ -320,23 +240,12 @@ export default class ProseLensPlugin extends Plugin implements EditorHost {
 		editor.focus();
 	}
 
-	private renderStatusBar(analysis: Analysis | null): void {
-		const status = this.statusBar;
-		if (!status) return;
-		status.empty();
-		if (!this.settings.showStatusBar) return;
-
-		if (!analysis) {
-			status.setText("");
-			return;
-		}
-		const { grade, flesch, words } = analysis.stats;
-		if (words === 0) {
-			status.setText("");
-			return;
-		}
-		status.setText(`Grade ${grade.toFixed(1)} · ${easeLabel(flesch)}`);
-		status.setAttr("aria-label", `${words} words, reading ease ${flesch.toFixed(0)}`);
+	async activatePanel(): Promise<void> {
+		const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_PROSE_PANEL)[0];
+		const leaf: WorkspaceLeaf | null = existing ?? this.app.workspace.getRightLeaf(false);
+		if (!leaf) return;
+		if (!existing) await leaf.setViewState({ type: VIEW_TYPE_PROSE_PANEL, active: true });
+		void this.app.workspace.revealLeaf(leaf);
 	}
 
 	private refreshPanels(): void {
@@ -346,20 +255,29 @@ export default class ProseLensPlugin extends Plugin implements EditorHost {
 		}
 	}
 
-	async activatePanel(): Promise<void> {
-		const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_PROSE_PANEL)[0];
-		const leaf: WorkspaceLeaf | null = existing ?? this.app.workspace.getRightLeaf(false);
-		if (!leaf) return;
-		if (!existing) await leaf.setViewState({ type: VIEW_TYPE_PROSE_PANEL, active: true });
-		void this.app.workspace.revealLeaf(leaf);
+	/**
+	 * Drop cached state for notes no longer open in any leaf. Both maps are keyed by path and
+	 * would otherwise grow for the whole session — and a stale baseline would make "since you
+	 * opened this note" quietly mean "since the first time you ever opened it".
+	 */
+	private evictClosedNotes(): void {
+		const open = new Set<string>();
+		for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
+			const view = leaf.view;
+			if (view instanceof MarkdownView && view.file) open.add(view.file.path);
+		}
+		for (const path of [...this.analyses.keys()]) {
+			if (!open.has(path)) this.analyses.delete(path);
+		}
+		for (const path of [...this.baselines.keys()]) {
+			if (!open.has(path)) this.baselines.delete(path);
+		}
 	}
 
-	// --- editor <-> file plumbing --------------------------------------------
-
 	/**
-	 * The note a CodeMirror view belongs to. Obsidian's public API has no view->file
-	 * lookup, so match on DOM containment — which is public, stable, and cheaper than
-	 * reaching into the private `editor.cm` handle that most plugins use here.
+	 * The note a CodeMirror view belongs to. Obsidian's public API has no view->file lookup, so
+	 * match on DOM containment — public, stable, and cheaper than reaching into the private
+	 * `editor.cm` handle most plugins use here.
 	 */
 	private markdownViewFor(view: EditorView): MarkdownView | null {
 		for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
@@ -379,18 +297,6 @@ export default class ProseLensPlugin extends Plugin implements EditorHost {
 		const active = this.app.workspace.getActiveViewOfType(MarkdownView);
 		return active !== null && active.containerEl.contains(view.dom);
 	}
-}
-
-/** The word straddling `ch` on `line`, or null. Letters, apostrophes and hyphens only. */
-function wordAtCursor(line: string, ch: number): string | null {
-	if (!line) return null;
-	const isWordChar = (char: string) => /[A-Za-zÀ-ÖØ-öø-ÿ'’-]/.test(char);
-	let start = Math.min(ch, line.length);
-	let end = start;
-	while (start > 0 && isWordChar(line[start - 1])) start--;
-	while (end < line.length && isWordChar(line[end])) end++;
-	const word = line.slice(start, end).replace(/^[-'’]+|[-'’]+$/g, "");
-	return /[A-Za-zÀ-ÖØ-öø-ÿ]/.test(word) ? word : null;
 }
 
 function coerceStringArray(value: unknown): string[] {

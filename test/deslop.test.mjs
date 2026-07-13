@@ -64,18 +64,26 @@ for (const word of singleWords) {
 }
 
 // --- em dash pile-up ---
+// THREE or more in one sentence. The threshold was raised from two after a fixture test caught
+// the false positive: a MATCHED PAIR is a parenthetical — "the report — which was late —
+// arrived" — which is correct English that careful writers type on purpose. Flagging it nagged
+// exactly the people this plugin is for.
 {
-	const text = "She left the room — quietly, without a word — and never came back.";
+	const text = "It was late — very late — and rushed — badly — so we shipped it anyway.";
 	const marks = analyze(text).filter((mark) => mark.message.includes("Em dash"));
-	assert.equal(marks.length, 2);
+	assert.equal(marks.length, 4, "a genuine pile-up marks every dash in the sentence");
 	assert.equal(marks[0].severity, "info");
 	assert.equal(slice(text, marks[0]), "—");
-	assert.equal(slice(text, marks[1]), "—");
 	assert.ok(marks[0].from < marks[1].from);
 }
 
-// MUST NOT FIRE: one em dash in a sentence is punctuation, not a tell — even when the
-// next sentence also has one.
+// MUST NOT FIRE: a parenthetical pair is punctuation, not a tell.
+{
+	const text = "The report — which was late — arrived on Tuesday.";
+	assert.equal(analyze(text).filter((mark) => mark.message.includes("Em dash")).length, 0);
+}
+
+// MUST NOT FIRE: one em dash in a sentence, even when the next sentence also has one.
 {
 	const text = "She left the room — quietly. He stayed behind — reluctantly.";
 	assert.equal(analyze(text).filter((mark) => mark.message.includes("Em dash")).length, 0);

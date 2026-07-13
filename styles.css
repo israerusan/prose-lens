@@ -64,6 +64,15 @@
 	box-shadow: inset 2px 0 0 0 var(--color-red);
 }
 
+/* A quiet mark: still there, still hoverable, but a hairline instead of a shout. Used for
+ * the modal passive ("this should be flagged") — correct, but the register of instructions,
+ * and marking it at full weight makes the tool feel like it is arguing with your docs. */
+.pl-quiet {
+	text-decoration-thickness: 1px;
+	text-decoration-style: dotted;
+	background-color: transparent;
+}
+
 /* Sentence-length heat: a cool-to-warm ramp, deliberately weaker than the rule marks so
  * the two layers can be on at once without the marks disappearing into the heat. */
 .pl-heat {

@@ -6,7 +6,7 @@ import { findEchoes } from "../core/echo.mjs";
 import type { Echo } from "../core/echo.d.mts";
 import { diffSnapshots, hasMoved, snapshot } from "../core/delta.mjs";
 import { easeLabel } from "../core/readability.mjs";
-import { createExternalLink } from "../settings";
+import { createExternalLink } from "./links";
 import { PRO_PRICE_LABEL, PRO_UNLOCK_SUMMARY, PURCHASE_URL } from "../product";
 
 export const VIEW_TYPE_PROSE_PANEL = "prose-lens-panel";

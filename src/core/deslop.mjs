@@ -193,15 +193,18 @@ export function findSlop(masked, sentences) {
 		}
 	}
 
-	// One em dash is punctuation. Two or more in a single sentence is the tell, so the
-	// sentence — not the document — is the unit we count over.
+	// One em dash is punctuation. TWO is a parenthetical — "the report — which was late —
+	// arrived" is correct English that a careful writer types on purpose, and flagging it was a
+	// false positive on exactly the people this plugin is for. Three or more in one sentence is
+	// the pile-up that reads as machine prose, so that is the threshold. The sentence, not the
+	// document, is the unit: a well-made em dash per paragraph is style, not a tell.
 	for (const sentence of sentences ?? []) {
 		const text = typeof sentence?.text === "string" ? sentence.text : "";
 		let count = 0;
 		for (let i = 0; i < text.length; i++) {
 			if (text[i] === "—") count++;
 		}
-		if (count < 2) continue;
+		if (count < 3) continue;
 		for (let i = 0; i < text.length; i++) {
 			if (text[i] !== "—") continue;
 			marks.push({

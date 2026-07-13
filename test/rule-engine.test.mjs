@@ -133,4 +133,57 @@ assert.equal(analyze("He walked quickly.").marks.filter((m) => m.word === "quick
 const carried = analyze("The file was deleted.");
 assert.equal(typeof carried.masked, "string");
 assert.equal(carried.masked.length, "The file was deleted.".length);
+// --- ONE statement per stretch of prose ---------------------------------------------------
+// Rules legitimately fire on top of each other. Painting both means two overlapping underlines
+// and two tooltips saying two things about the same words — the user does not care that two
+// internal heuristics matched, they see the tool nagging twice, and in a writing tool noise
+// reads as unreliability.
+const overlapping = (doc) => {
+	const found = analyze(doc, { isPro: true }).marks.filter((m) => m.rule !== "longSentence");
+	const pairs = [];
+	for (let i = 0; i < found.length; i++) {
+		for (let j = i + 1; j < found.length; j++) {
+			if (found[i].from < found[j].to && found[j].from < found[i].to) {
+				pairs.push(`${found[i].rule}/${found[j].rule}`);
+			}
+		}
+	}
+	return pairs;
+};
+
+// The two the smoke test actually produced.
+assert.deepEqual(overlapping("The report was quickly written by experts."), [], "passive swallows the adverb inside it");
+assert.deepEqual(overlapping("It is not just thorough, it is transformative."), [], "the de-slop phrase swallows the hedge inside it");
+
+// And a paragraph with every rule live.
+assert.deepEqual(
+	overlapping(
+		"It is worth noting that this was quickly written by many experts, and it is not just thorough, it is transformative. " +
+			"At the end of the day the the file should be flagged."
+	),
+	[],
+	"no two marks may cover the same words"
+);
+
+// The containing mark is the one that survives, because it is the more contextual message.
+const swallowed = analyze("The report was quickly written.", { isPro: true }).marks;
+assert.deepEqual(swallowed.map((m) => m.rule), ["passive"]);
+// ...and once the passive is fixed, the adverb comes back.
+assert.ok(analyze("They wrote the report quickly.").marks.some((m) => m.rule === "adverb"));
+
+// A doubled word is a TYPO, not a style opinion — it survives being contained by anything.
+const typo = analyze("At the end of the the day it works.", { isPro: true });
+assert.ok(typo.marks.some((m) => m.rule === "doubled"), "a doubled word is never swallowed");
+
+// --- the modal passive is marked QUIETLY, not silenced ----------------------------------------
+// "should be flagged" is genuinely passive and a writing tool should say so. But it is also the
+// register of instructions and checklists, which is a lot of what lives in a vault — so it is
+// reported at the quietest severity rather than at full weight.
+const modal = analyze("This should be flagged.").marks.find((m) => m.rule === "passive");
+assert.ok(modal, "a modal passive is still a passive and must still be marked");
+assert.equal(modal.severity, "info", "...but quietly");
+
+const real = analyze("The ball was thrown by John.").marks.find((m) => m.rule === "passive");
+assert.equal(real.severity, "warn", "a plain passive keeps its full weight");
+
 console.log("ok  rule-engine.test.mjs");

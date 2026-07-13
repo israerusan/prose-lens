@@ -169,12 +169,18 @@ export function analyze(text, options = {}) {
 
 		if (enabled("passive")) {
 			for (const span of findPassive(masked, sentence)) {
+				// A modal passive ("this should be flagged") is the register of instructions and
+				// checklists, which is a lot of what lives in a vault. Still passive, still
+				// marked — but at the quietest severity, so the tool does not appear to be
+				// arguing with the writer's own documentation.
 				marks.push({
 					from: span.from,
 					to: span.to,
 					rule: "passive",
-					severity: "warn",
-					message: "Passive voice — name who did it",
+					severity: span.modal ? "info" : "warn",
+					message: span.modal
+						? "Passive voice — fine in instructions, but naming who acts is stronger"
+						: "Passive voice — name who did it",
 				});
 			}
 		}
@@ -189,6 +195,7 @@ export function analyze(text, options = {}) {
 	}
 
 	marks = applyIgnores(marks, opts.ignoredWords);
+	marks = resolveOverlaps(marks);
 	marks.sort((a, b) => a.from - b.from || a.to - b.to || a.rule.localeCompare(b.rule));
 
 	/** @type {Record<string, number>} */
@@ -270,6 +277,73 @@ function findPhrases(source, masked, ruleEntries) {
 		i += best.tokens.length - 1;
 	}
 	return found;
+}
+
+/**
+ * Precedence for marks that land on the same words, highest first. Only used to break a
+ * tie when two marks cover the SAME span; containment is settled by span length below.
+ */
+const RULE_RANK = {
+	doubled: 70,
+	deslop: 60,
+	cliche: 50,
+	passive: 40,
+	hedge: 30,
+	weasel: 25,
+	adverb: 10,
+};
+
+/**
+ * One statement per stretch of prose.
+ *
+ * Rules legitimately fire on top of each other — "was quickly written" is a passive span
+ * with an adverb inside it, and the de-slop phrase "not just thorough, it's" contains the
+ * hedge "just". Painting both means two overlapping underlines and two tooltips telling
+ * the writer two things about the same words. The user does not care that two internal
+ * heuristics matched; they see the tool nagging twice, and in a writing tool noise reads
+ * as unreliability.
+ *
+ * So when one mark fully CONTAINS another, the containing mark wins: it is the more
+ * contextual message, and once the writer fixes it the inner mark reappears if it still
+ * applies. Two exceptions:
+ *
+ *   - `longSentence` is a different layer entirely (a background tint over a whole
+ *     sentence, not an underline on a phrase). It contains almost everything by
+ *     definition and must never suppress anything.
+ *   - `doubled` survives being contained. It is a TYPO, not a style opinion, and it is the
+ *     one mark a writer always wants to see.
+ */
+function resolveOverlaps(marks) {
+	const layered = marks.filter((mark) => mark.rule !== "longSentence");
+	if (layered.length < 2) return marks;
+
+	// Longest first, so a container is always considered before what it contains.
+	const ordered = [...layered].sort(
+		(a, b) =>
+			b.to - b.from - (a.to - a.from) ||
+			a.from - b.from ||
+			(RULE_RANK[b.rule] ?? 0) - (RULE_RANK[a.rule] ?? 0)
+	);
+
+	const kept = [];
+	const dropped = new Set();
+	for (const mark of ordered) {
+		if (mark.rule === "doubled") {
+			kept.push(mark);
+			continue;
+		}
+		const swallowed = kept.some(
+			(other) =>
+				other.rule !== "doubled" &&
+				other.from <= mark.from &&
+				other.to >= mark.to &&
+				!(other.from === mark.from && other.to === mark.to && other === mark)
+		);
+		if (swallowed) dropped.add(mark);
+		else kept.push(mark);
+	}
+
+	return marks.filter((mark) => !dropped.has(mark));
 }
 
 /**

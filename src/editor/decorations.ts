@@ -24,7 +24,11 @@ const HEAT_CLASS: Record<string, string> = {
 
 function markClass(mark: Mark): string {
 	const base = RULE_CLASS[mark.rule] ?? "pl-mark";
-	return mark.rule === "longSentence" && mark.severity === "strong" ? `${base} pl-verylong` : base;
+	if (mark.rule === "longSentence" && mark.severity === "strong") return `${base} pl-verylong`;
+	// A quiet mark is a real mark that has been told to sit down: the modal passive that is
+	// everywhere in instructions and checklists. Same information, a fraction of the shout.
+	if (mark.severity === "info" && mark.rule === "passive") return `${base} pl-quiet`;
+	return base;
 }
 
 /**

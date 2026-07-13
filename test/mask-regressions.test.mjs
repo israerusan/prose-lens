@@ -52,7 +52,10 @@ assert.ok(rules("A ` stray tick and the file was quickly deleted.").includes("pa
 const money = "It cost $5 and the report was quickly written by many experts for $10.";
 const moneyRules = rules(money);
 assert.ok(moneyRules.includes("passive"), "prose between two currency amounts must still be analyzed");
-assert.ok(moneyRules.includes("adverb"));
+// "many" is a weasel word and sits OUTSIDE the passive span, so it survives the overlap
+// resolver. ("quickly" does not — it is inside "was quickly written", and one stretch of
+// prose gets one mark. See the overlap tests in rule-engine.test.mjs.)
+assert.ok(moneyRules.includes("weasel"));
 assert.ok(maskText(money).includes("was quickly written"), "the clause must survive masking");
 // Real inline math still masks.
 assert.deepEqual(rules("The value $x = was_computed_slowly$ holds."), []);
@@ -92,7 +95,8 @@ console.log("ok  mask-regressions.test.mjs");
 const stray = "Press the ` key.\n\nThis paragraph was quickly written by many experts.\n\nRun `npm test` now.";
 const strayRules = rules(stray);
 assert.ok(strayRules.includes("passive"), "a stray backtick must not blank the next paragraph");
-assert.ok(strayRules.includes("adverb"));
+// "many" survives; "quickly" is inside the passive span and the overlap resolver drops it.
+assert.ok(strayRules.includes("weasel"));
 assert.ok(maskText(stray).includes("was quickly written"));
 // The real code span still masks.
 assert.ok(!maskText(stray).includes("npm test"));
@@ -101,8 +105,11 @@ assert.ok(!maskText(stray).includes("npm test"));
 // Fence tracking ignored blockquote depth, so "> ```" inside a ```markdown block CLOSED it.
 // The block's real closer then OPENED a phantom fence that swallowed the rest of the note.
 const quoted = "```markdown\n> ```\n> quoted\n```\n\nThis was clearly written by experts.";
+// The point is that the prose after the block is ANALYZED at all; which rule fires is
+// incidental. ("clearly" is inside the passive span "was clearly written", so the overlap
+// resolver keeps the passive and drops the weasel — one mark per stretch of prose.)
 assert.ok(
-	rules(quoted).includes("weasel"),
+	rules(quoted).includes("passive"),
 	"prose after a fenced block containing a quoted fence must still be analyzed"
 );
 assert.ok(!maskText(quoted).includes("quoted"), "the fenced content stays masked");
@@ -110,7 +117,7 @@ assert.ok(!maskText(quoted).includes("quoted"), "the fenced content stays masked
 // --- an unclosed fence inside a quote must not swallow the note ------------------------------
 const unclosed = "> ```js\n> const x = 1;\n\nThe rest was obviously written by the team.";
 assert.ok(
-	rules(unclosed).includes("weasel"),
+	rules(unclosed).includes("passive"),
 	"a blockquote ending must close a fence opened inside it"
 );
 

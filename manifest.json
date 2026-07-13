@@ -1,7 +1,7 @@
 {
   "id": "prose-lens",
   "name": "Prose Lens",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "minAppVersion": "1.4.0",
   "description": "Live readability and style marks in the editor: passive voice, adverbs, hedges, long sentences, and a Flesch reading grade. Works fully offline.",
   "author": "Israel Avila",

@@ -7,7 +7,7 @@ import {
 	PRODUCT_NAME,
 	PURCHASE_URL,
 } from "../../product";
-import { createExternalLink } from "../../settings";
+import { createExternalLink } from "../links";
 
 /**
  * Shown the moment a free user reaches for a Pro feature: what they get, the price, a

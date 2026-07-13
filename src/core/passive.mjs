@@ -43,6 +43,30 @@ const BE_VERBS = new Set([
 const GET_VERBS = new Set(["get", "gets", "got", "gotten"]);
 
 /**
+ * Modals. A passive introduced by one ("this should be flagged", "the file can be deleted")
+ * is still passive — the agent is still missing, and "you should flag this" is still the
+ * better sentence — but it is overwhelmingly the register of instructions, checklists, and
+ * meta-notes, which is a large part of what people keep in a vault. Marking it at full
+ * weight makes the tool feel like it is arguing with documentation.
+ *
+ * So it is reported, with `modal: true`, and the rule engine drops it to the quietest
+ * severity. Marked, not shouted at, and never silently dropped.
+ */
+const MODALS = new Set([
+	"should",
+	"shall",
+	"can",
+	"could",
+	"may",
+	"might",
+	"must",
+	"will",
+	"would",
+	"cannot",
+	"ought",
+]);
+
+/**
  * Adverbs allowed to sit between the be-verb and the participle.
  *
  * Degree modifiers (very, too, quite, so, rather, pretty, more, most, less) are
@@ -154,7 +178,13 @@ export function findPassive(masked, sentence) {
 
 				const from = list[i].from;
 				const to = list[j].to;
-				found.push({ from, to, text: masked.slice(from, to) });
+				const preceding = i > 0 ? list[i - 1].text.toLowerCase() : "";
+				found.push({
+					from,
+					to,
+					text: masked.slice(from, to),
+					modal: MODALS.has(preceding),
+				});
 				// Resume after the participle so two spans never overlap.
 				i = j;
 				break;
