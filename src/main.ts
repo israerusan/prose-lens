@@ -109,13 +109,18 @@ export default class ProseLensPlugin extends Plugin implements EditorHost {
 				// Re-publish the note's own analysis rather than blanking. An already-open tab
 				// may never fire an editor update on the way back to it, so blanking here left
 				// the status bar empty and the panel showing the PREVIOUS note's numbers.
-				this.evictClosedNotes();
 				const path = file?.path ?? null;
 				this.activeAnalysis = path ? (this.analyses.get(path) ?? null) : null;
 				this.renderStatusBar(this.activeAnalysis);
 				this.refreshPanels();
 			})
 		);
+
+		// Eviction belongs on layout-change, NOT on file-open: file-open fires after the leaf
+		// already holds the file, so a note being reopened is always still "open" and its
+		// stale baseline would survive the very eviction meant to clear it. layout-change
+		// fires when a leaf actually closes, which is the moment the note stops being open.
+		this.registerEvent(this.app.workspace.on("layout-change", () => this.evictClosedNotes()));
 
 		this.addSettingTab(new ProseLensSettingTab(this));
 	}
@@ -124,6 +129,11 @@ export default class ProseLensPlugin extends Plugin implements EditorHost {
 		if (this.saveTimer !== null) {
 			window.clearTimeout(this.saveTimer);
 			this.saveTimer = null;
+			// FLUSH, don't drop. Dragging a slider and then quitting inside the 400ms window
+			// used to discard the write silently, and the setting reverted on next load.
+			// onunload is synchronous, so this is fire-and-forget by necessity — but issuing
+			// the write beats dropping it.
+			void this.saveData(this.settings);
 		}
 		this.baselines.clear();
 		this.analyses.clear();

@@ -78,3 +78,61 @@ const elapsed = Date.now() - started;
 assert.ok(elapsed < 1000, `leading-whitespace masking must stay linear (took ${elapsed}ms)`);
 
 console.log("ok  mask-regressions.test.mjs");
+
+// =========================================================================================
+// Round 2 — regressions introduced BY the first round of fixes, caught by re-reviewing the
+// diff. Every one of these was a NEW bug in the fix, which is exactly why the diff gets its
+// own review pass rather than being trusted because the tests were green.
+// =========================================================================================
+
+// --- a stray backtick must not pair across a blank line ------------------------------------
+// The new closer scan was unbounded, so "Press the ` key." paired with the opening backtick
+// of a real code span paragraphs later and BLANKED everything in between — then re-paired
+// every span after it. CommonMark forbids a code span containing a blank line.
+const stray = "Press the ` key.\n\nThis paragraph was quickly written by many experts.\n\nRun `npm test` now.";
+const strayRules = rules(stray);
+assert.ok(strayRules.includes("passive"), "a stray backtick must not blank the next paragraph");
+assert.ok(strayRules.includes("adverb"));
+assert.ok(maskText(stray).includes("was quickly written"));
+// The real code span still masks.
+assert.ok(!maskText(stray).includes("npm test"));
+
+// --- a quoted fence must not close an unquoted one -----------------------------------------
+// Fence tracking ignored blockquote depth, so "> ```" inside a ```markdown block CLOSED it.
+// The block's real closer then OPENED a phantom fence that swallowed the rest of the note.
+const quoted = "```markdown\n> ```\n> quoted\n```\n\nThis was clearly written by experts.";
+assert.ok(
+	rules(quoted).includes("weasel"),
+	"prose after a fenced block containing a quoted fence must still be analyzed"
+);
+assert.ok(!maskText(quoted).includes("quoted"), "the fenced content stays masked");
+
+// --- an unclosed fence inside a quote must not swallow the note ------------------------------
+const unclosed = "> ```js\n> const x = 1;\n\nThe rest was obviously written by the team.";
+assert.ok(
+	rules(unclosed).includes("weasel"),
+	"a blockquote ending must close a fence opened inside it"
+);
+
+// --- phrase marks must not span a masked construct --------------------------------------------
+// findPhrases judged token gaps on the MASKED text, where a code span is spaces — so
+// "the `sic` bottom line" matched the cliche "the bottom line" straight across the code.
+assert.ok(
+	!rules("But the `sic` bottom line is that it works.").includes("cliche"),
+	"a phrase must not match across a masked span"
+);
+// The real cliche still fires.
+assert.ok(rules("But the bottom line is that it works.").includes("cliche"));
+
+// --- fences inside list items ------------------------------------------------------------------
+assert.deepEqual(rules("1. Run this:\n\n    ```yaml\n    - task: was clearly deleted\n    ```\n"), []);
+assert.deepEqual(rules("- item\n\n\t```js\n\tconst wasRemoved = clearly(x);\n\t```\n"), []);
+
+// --- the bounded scans stay linear ---------------------------------------------------------------
+const t0 = Date.now();
+maskText("` x ".repeat(20000));
+maskText("$a ".repeat(20000));
+maskText("```\n".repeat(10000));
+assert.ok(Date.now() - t0 < 2000, "the bounded scanners must stay linear");
+
+console.log("ok  mask-regressions.test.mjs (round 2)");

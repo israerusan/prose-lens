@@ -182,7 +182,7 @@ export function analyze(text, options = {}) {
 
 	const activePhraseRules = PHRASE_RULES.filter((entry) => enabled(entry.rule));
 	if (activePhraseRules.length > 0) {
-		marks.push(...findPhrases(masked, activePhraseRules));
+		marks.push(...findPhrases(source, masked, activePhraseRules));
 	}
 	if (enabled("deslop")) {
 		marks.push(...findSlop(masked, sentences));
@@ -210,7 +210,7 @@ export function analyze(text, options = {}) {
  * Matching is token-based, so it is word-boundary-correct by construction: "just" can
  * never match inside "adjust".
  */
-function findPhrases(masked, ruleEntries) {
+function findPhrases(source, masked, ruleEntries) {
 	/** @type {Map<string, Array<{tokens: string[], entry: object}>>} */
 	const buckets = new Map();
 	for (const entry of ruleEntries) {
@@ -243,9 +243,13 @@ function findPhrases(masked, ruleEntries) {
 					ok = false;
 					break;
 				}
-				// The words must be adjacent prose, not separated by a masked construct.
-				const gap = masked.slice(wordList[i + t - 1].to, wordList[i + t].from);
-				if (gap.length > 8 || /\S/.test(gap)) {
+				// The words must be adjacent PROSE. The gap is judged on the source, not the
+				// masked text — masked text turns a code span into spaces, so "the `sic` bottom
+				// line" would otherwise read as the cliche "the bottom line" and paint a mark
+				// straight across the code. Same invariant the doubled-word rule enforces.
+				const from = wordList[i + t - 1].to;
+				const until = wordList[i + t].from;
+				if (until - from > 8 || /\S/.test(source.slice(from, until))) {
 					ok = false;
 					break;
 				}

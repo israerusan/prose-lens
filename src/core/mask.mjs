@@ -87,22 +87,27 @@ function lineRanges(text) {
 }
 
 /**
- * Strip up to three leading spaces and any blockquote/callout markers, returning where
- * the line's real content starts. `> ``` ` is a code fence; without this it reads as
- * prose and every rule fires inside the block.
+ * Where a line's real content starts, and how deeply it is quoted.
+ *
+ * Leading whitespace is consumed without a 3-space limit on purpose. CommonMark would
+ * call a 4-space-indented ``` an indented code block rather than a fence — but indented
+ * code is masked too, so the outcome is identical either way, while insisting on the
+ * limit would fail to recognise a fence indented inside a list item, which is how
+ * everyone actually writes them.
+ *
+ * `depth` is the number of blockquote markers. It matters: a fence opened inside a quote
+ * must not be closed by an unquoted fence, and vice versa.
  */
-function contentStart(raw) {
+function lineContext(raw) {
 	let i = 0;
-	// Leading indent (up to 3 spaces keeps it out of indented-code territory).
-	while (i < raw.length && i < 3 && raw[i] === " ") i++;
-	// Any number of nested blockquote markers, each optionally followed by one space.
-	for (;;) {
-		if (raw[i] !== ">") break;
+	let depth = 0;
+	while (i < raw.length && (raw[i] === " " || raw[i] === "\t")) i++;
+	while (raw[i] === ">") {
+		depth++;
 		i++;
-		if (raw[i] === " ") i++;
-		while (i < raw.length && raw[i] === " ") i++;
+		while (i < raw.length && (raw[i] === " " || raw[i] === "\t")) i++;
 	}
-	return i;
+	return { start: i, depth };
 }
 
 function maskFrontmatter(text, out) {
@@ -122,34 +127,47 @@ function maskFrontmatter(text, out) {
 }
 
 /**
- * Fenced code, honouring both CommonMark rules the first version got wrong:
- *   - a fence may sit inside a blockquote or a callout (`> ```js`)
- *   - a fence of N markers is closed only by a run of AT LEAST N of the same marker,
- *     so a 4-backtick fence is NOT closed by an inner ``` line
+ * Fenced code, honouring the three CommonMark rules that matter here:
+ *   - a fence may sit inside a blockquote or a callout (`> ```js`), or inside a list item
+ *   - a fence of N markers is closed only by a run of AT LEAST N of the same marker, so a
+ *     4-backtick fence is NOT closed by an inner ``` line
+ *   - a fence lives inside its container. A ``` inside a blockquote does NOT close a fence
+ *     opened outside it — that mistake let a quoted fence terminate an outer block, after
+ *     which real prose was linted as code and the actual closer opened a phantom fence
+ *     that blanked the rest of the note.
  */
 function maskFencedCode(text, out) {
-	let open = null; // { char: "`" | "~", length: number }
+	let open = null; // { char, length, depth }
 
 	for (const { from, to } of lineRanges(text)) {
 		const raw = text.slice(from, to);
-		const start = contentStart(raw);
+		const { start, depth } = lineContext(raw);
 		const fence = fenceAt(raw, start);
 
 		if (open === null) {
 			if (fence) {
-				open = fence;
+				open = { ...fence, depth };
 				blank(out, from, to);
 			}
 			continue;
 		}
 
+		// The container that held the fence has ended (the quote stopped, or a blank line
+		// broke it). An unterminated fence must not swallow the remainder of the note.
+		if (depth < open.depth && raw.trim() !== "") {
+			open = null;
+			continue;
+		}
+
 		blank(out, from, to);
-		// A closing fence must use the same character and be at least as long. An info
-		// string is only allowed on the OPENING fence, so a closer must be bare.
+
+		// A closer must be the same marker, at least as long, at the same quote depth, and
+		// bare — an info string is only allowed on the opener.
 		if (
 			fence &&
 			fence.char === open.char &&
 			fence.length >= open.length &&
+			depth === open.depth &&
 			raw.slice(start + fence.length).trim() === ""
 		) {
 			open = null;
@@ -179,8 +197,7 @@ function maskLineKinds(text, out) {
 		// Already fully masked (inside a fence)? Leave it.
 		if (out.slice(from, to).join("").trim() === "") continue;
 
-		const start = contentStart(raw);
-		const body = raw.slice(start);
+		const body = raw.slice(lineContext(raw).start);
 
 		if (/^#{1,6}\s/.test(body)) {
 			blank(out, from, to);
@@ -212,9 +229,18 @@ function maskLineKinds(text, out) {
 
 /**
  * Inline code spans. A run of N backticks opens a span that only a run of exactly N
- * backticks closes (CommonMark). The old regex capped N at 3, so ````x```` leaked its
- * contents straight into the rule engine.
+ * backticks closes (CommonMark). The regex this replaced capped N at 3, so ````x````
+ * leaked its contents straight into the rule engine.
+ *
+ * The closer search is BOUNDED, and that bound is not an optimisation — it is the
+ * correctness fix. An unbounded search let a stray backtick ("Press the ` key.") pair with
+ * the opening backtick of a real code span forty lines later and blank every paragraph in
+ * between, which then re-paired every code span after it. CommonMark forbids a code span
+ * from containing a blank line, so the scan stops at one; the length cap bounds the cost
+ * of a document full of unmatched backticks at the same time.
  */
+const MAX_CODE_SPAN = 1000;
+
 function maskInlineCode(text, out) {
 	let i = 0;
 	while (i < text.length) {
@@ -225,10 +251,11 @@ function maskInlineCode(text, out) {
 		let openLength = 0;
 		while (text[i + openLength] === "`") openLength++;
 
-		// Look for a closing run of exactly the same length, on the same "paragraph".
 		let j = i + openLength;
 		let closeStart = -1;
-		while (j < text.length) {
+		const limit = Math.min(text.length, i + MAX_CODE_SPAN);
+		while (j < limit) {
+			if (text[j] === "\n" && isBlankLineBreak(text, j)) break;
 			if (text[j] !== "`") {
 				j++;
 				continue;
@@ -243,13 +270,20 @@ function maskInlineCode(text, out) {
 		}
 
 		if (closeStart === -1) {
-			// No closer: the backticks are literal text, not a span.
+			// No closer within the span's reach: the backticks are literal text.
 			i += openLength;
 			continue;
 		}
 		blank(out, i, closeStart + openLength);
 		i = closeStart + openLength;
 	}
+}
+
+/** True when the newline at `index` is followed by a line that is blank. */
+function isBlankLineBreak(text, index) {
+	let k = index + 1;
+	while (k < text.length && (text[k] === " " || text[k] === "\t" || text[k] === "\r")) k++;
+	return k >= text.length || text[k] === "\n";
 }
 
 function maskMath(text, out) {

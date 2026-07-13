@@ -134,11 +134,17 @@ export class ProsePanelView extends ItemView {
 		result.lengths.forEach((length, index) => {
 			const bar = map.createDiv({ cls: `pl-bar pl-bar-${result.bands[index]}` });
 			// The bar length IS the data — it cannot live in styles.css. It is published as a
-			// CSS custom property (which the review's no-static-styles rule explicitly exempts,
-			// and which a theme can still override) rather than as a raw inline `width`.
-			bar.setCssStyles({
+			// CSS custom property, which a theme can still override, rather than as a raw
+			// inline `width`.
+			//
+			// setCssProps, NOT setCssStyles. setCssStyles is Object.assign onto a
+			// CSSStyleDeclaration, so a "--custom-prop" key lands as a JS expando and sets no
+			// CSS variable at all — every bar silently fell back to width:100% and the rhythm
+			// map, the headline free feature, rendered as a solid block. setCssProps exists for
+			// exactly this and calls setProperty underneath.
+			bar.setCssProps({
 				"--pl-bar-width": `${Math.max(4, Math.round((length / longest) * 100))}%`,
-			} as Partial<CSSStyleDeclaration>);
+			});
 			bar.setAttr("aria-label", `${length} words`);
 			bar.setAttr("title", `${length} words`);
 			bar.dataset.plTarget = this.target(analysis.sentences[index].from);

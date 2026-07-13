@@ -6,3 +6,7 @@ test/.build/
 
 # License signing key — author-only, never commit or publish.
 scripts/.license-private.key
+
+# Round-table review transcripts — local tooling artifact, never part of the source.
+.roundtable/
+*.diff
