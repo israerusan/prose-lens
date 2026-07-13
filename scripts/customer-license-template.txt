@@ -1,0 +1,28 @@
+Subject: Your Prose Lens Pro license
+
+Hi,
+
+Thanks for buying Prose Lens Pro. Here is your license key:
+
+{{LICENSE_KEY}}
+
+To activate it:
+
+1. In Obsidian, open Settings → Community plugins → Prose Lens.
+2. Paste the key into the "License key" field.
+3. That's it. The status changes to "Pro active" immediately.
+
+Verification is completely offline — the key is checked against a signature built into
+the plugin. There is no account, no server, and Prose Lens never makes a network request.
+The key works on every device you use, forever, with no subscription.
+
+Pro unlocks:
+
+- De-slop marks — the phrasing tells of machine-generated prose
+- Echo detector — the words you lean on, and where they cluster
+- Revision delta — watch the grade fall as you cut
+- Focus mode — dim everything but the sentence you are editing
+
+If the key does not take, reply to this email and I will sort it out.
+
+— Israel

@@ -1,0 +1,10 @@
+export const ADVERB_EXCEPTIONS: ReadonlySet<string>;
+export const HEDGE_WORDS: ReadonlySet<string>;
+export const HEDGE_PHRASES: readonly string[];
+export const WEASEL_WORDS: ReadonlySet<string>;
+export const CLICHE_PHRASES: readonly string[];
+export const DESLOP_WORDS: ReadonlySet<string>;
+export const DESLOP_PHRASES: readonly string[];
+export const IRREGULAR_PARTICIPLES: ReadonlySet<string>;
+export const NON_PARTICIPLE_ED: ReadonlySet<string>;
+export const STOPWORDS: ReadonlySet<string>;

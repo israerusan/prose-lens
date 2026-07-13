@@ -1,0 +1,123 @@
+import { type Extension } from "@codemirror/state";
+import { Decoration, EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
+import type { Analysis } from "../core/types.d.mts";
+import { analyze } from "../core/ruleEngine.mjs";
+import type { ProseLensSettings } from "../settings";
+import { buildDecorations } from "./decorations";
+import { analysisField, decorationField, setAnalysis, setDecorations } from "./state";
+import { focusPlugin } from "./focus";
+
+/** What the editor extension needs from the plugin. Kept narrow so it stays testable. */
+export interface EditorHost {
+	settings: ProseLensSettings;
+	/** Bumped on every settings save. Changing it re-runs the analysis in every editor. */
+	readonly settingsEpoch: number;
+	/** Called after every analysis so the status bar and the panel can follow along. */
+	onAnalysis(view: EditorView, analysis: Analysis | null): void;
+	/** True when marks are muted for the note in this editor. */
+	isMuted(view: EditorView): boolean;
+}
+
+/** Idle time after the last keystroke before we re-analyze. */
+const DEBOUNCE_MS = 250;
+
+export function proseLensExtension(host: EditorHost): Extension {
+	const runner = ViewPlugin.fromClass(
+		class {
+			private timer: number | null = null;
+			private lastText: string | null = null;
+			private epoch: number;
+			/** The editor's OWN window — a note in a popout window has a different one. */
+			private win: Window;
+
+			constructor(private view: EditorView) {
+				this.epoch = host.settingsEpoch;
+				this.win = view.dom.ownerDocument.defaultView ?? window;
+				this.schedule(0);
+			}
+
+			update(update: ViewUpdate): void {
+				// Only a document change can invalidate the analysis. Scrolling and cursor
+				// movement must never trigger one — that is what makes scrolling free.
+				if (update.docChanged) {
+					this.schedule(DEBOUNCE_MS);
+					return;
+				}
+				// A settings save calls workspace.updateOptions(), which reconfigures every
+				// editor and lands here. That is how a rule toggle or a Pro unlock reaches
+				// the open notes without this extension holding a reference to the plugin's
+				// internals — or the plugin reaching into CodeMirror's.
+				if (host.settingsEpoch !== this.epoch) {
+					this.epoch = host.settingsEpoch;
+					this.lastText = null;
+					this.schedule(0);
+				}
+			}
+
+			destroy(): void {
+				this.clear();
+			}
+
+			private clear(): void {
+				if (this.timer !== null) {
+					this.win.clearTimeout(this.timer);
+					this.timer = null;
+				}
+			}
+
+			private schedule(delay: number): void {
+				this.clear();
+				this.timer = this.win.setTimeout(() => {
+					this.timer = null;
+					this.run();
+				}, delay);
+			}
+
+			private run(): void {
+				const settings = host.settings;
+				const text = this.view.state.doc.toString();
+
+				// The size cap is an honest guard, not a silent one: main.ts reports "note
+				// too large" in the status bar rather than pretending the grade is zero.
+				const muted = host.isMuted(this.view);
+				const tooLarge = text.length > settings.maxNoteChars;
+				if (muted || tooLarge) {
+					this.publish(null);
+					return;
+				}
+
+				// Identical text after a debounce (undo/redo round trip, or a change that
+				// cancelled itself out) — skip the work.
+				if (text === this.lastText) return;
+				this.lastText = text;
+
+				const analysis = analyze(text, {
+					rules: settings.rules,
+					longSentenceWords: settings.longSentenceWords,
+					veryLongSentenceWords: settings.veryLongSentenceWords,
+					ignoredWords: settings.ignoredWords,
+					isPro: settings.isPro,
+				});
+				this.publish(analysis);
+			}
+
+			private publish(analysis: Analysis | null): void {
+				const decorations = analysis
+					? buildDecorations(analysis, host.settings)
+					: Decoration.none;
+				this.view.dispatch({
+					effects: [setAnalysis.of(analysis), setDecorations.of(decorations)],
+				});
+				host.onAnalysis(this.view, analysis);
+			}
+
+			/** Force a re-run — used when settings or the Pro entitlement change. */
+			refresh(): void {
+				this.lastText = null;
+				this.schedule(0);
+			}
+		}
+	);
+
+	return [decorationField, analysisField, runner, focusPlugin(host)];
+}

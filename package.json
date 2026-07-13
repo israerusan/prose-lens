@@ -1,0 +1,40 @@
+{
+  "name": "prose-lens",
+  "version": "1.0.0",
+  "description": "Live readability and style marks in the Obsidian editor. Free marks and grade; Pro de-slop, echo, delta, and focus.",
+  "main": "main.js",
+  "type": "module",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "tsc --noEmit -p . && node esbuild.config.mjs production",
+    "typecheck": "tsc --noEmit -p .",
+    "lint": "tsc --noEmit -p . && eslint . --max-warnings 0",
+    "sync:shared": "node scripts/sync-shared.mjs",
+    "test": "npm run lint && node scripts/sync-shared.mjs --check && node test/run.mjs",
+    "test:ci": "node test/run.mjs",
+    "license:generate": "node scripts/generate-license.mjs"
+  },
+  "keywords": [
+    "obsidian",
+    "writing",
+    "readability",
+    "prose",
+    "style"
+  ],
+  "author": "Israel Avila",
+  "license": "MIT",
+  "devDependencies": {
+    "@codemirror/state": "^6.5.0",
+    "@codemirror/view": "^6.26.0",
+    "@types/node": "^24.0.0",
+    "esbuild": "^0.25.0",
+    "eslint": "^9.39.4",
+    "eslint-plugin-obsidianmd": "^0.4.1",
+    "obsidian": "1.7.2",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.62.1"
+  },
+  "dependencies": {
+    "tweetnacl": "^1.0.3"
+  }
+}

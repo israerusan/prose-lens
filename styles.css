@@ -1,0 +1,351 @@
+/* Prose Lens
+ *
+ * Every colour is derived from an Obsidian theme variable, never hard-coded, so the
+ * marks stay legible in any theme — light, dark, or a high-contrast community one.
+ * Marks are underlines and tints rather than solid fills: they sit UNDER the prose the
+ * user is trying to read, and text has to stay readable while it is being marked. */
+
+.pl-mark {
+	border-radius: 2px;
+	text-decoration-line: underline;
+	text-decoration-thickness: 2px;
+	text-underline-offset: 3px;
+	text-decoration-skip-ink: none;
+}
+
+.pl-adverb {
+	text-decoration-color: var(--color-yellow);
+	background-color: color-mix(in srgb, var(--color-yellow) 12%, transparent);
+}
+
+.pl-passive {
+	text-decoration-color: var(--color-purple);
+	background-color: color-mix(in srgb, var(--color-purple) 12%, transparent);
+}
+
+.pl-hedge {
+	text-decoration-color: var(--color-cyan);
+	background-color: color-mix(in srgb, var(--color-cyan) 12%, transparent);
+}
+
+.pl-weasel {
+	text-decoration-color: var(--color-orange);
+	background-color: color-mix(in srgb, var(--color-orange) 12%, transparent);
+}
+
+.pl-cliche {
+	text-decoration-color: var(--color-pink);
+	background-color: color-mix(in srgb, var(--color-pink) 12%, transparent);
+}
+
+.pl-deslop {
+	text-decoration-color: var(--color-green);
+	text-decoration-style: wavy;
+	text-decoration-thickness: 1px;
+	background-color: color-mix(in srgb, var(--color-green) 12%, transparent);
+}
+
+.pl-doubled {
+	text-decoration-color: var(--text-error);
+	text-decoration-style: wavy;
+	background-color: color-mix(in srgb, var(--text-error) 14%, transparent);
+}
+
+/* Long sentences are a property of the whole sentence, so they get a background tint
+ * rather than an underline — an underline that long reads as a link. */
+.pl-long {
+	text-decoration-line: none;
+	background-color: color-mix(in srgb, var(--color-red) 8%, transparent);
+	box-shadow: inset 2px 0 0 0 color-mix(in srgb, var(--color-red) 45%, transparent);
+}
+
+.pl-verylong {
+	background-color: color-mix(in srgb, var(--color-red) 15%, transparent);
+	box-shadow: inset 2px 0 0 0 var(--color-red);
+}
+
+/* Sentence-length heat: a cool-to-warm ramp, deliberately weaker than the rule marks so
+ * the two layers can be on at once without the marks disappearing into the heat. */
+.pl-heat {
+	border-radius: 2px;
+}
+
+.pl-heat-short {
+	background-color: color-mix(in srgb, var(--color-blue) 7%, transparent);
+}
+
+.pl-heat-medium {
+	background-color: transparent;
+}
+
+.pl-heat-long {
+	background-color: color-mix(in srgb, var(--color-orange) 7%, transparent);
+}
+
+.pl-heat-verylong {
+	background-color: color-mix(in srgb, var(--color-red) 9%, transparent);
+}
+
+/* Focus mode */
+.pl-dim {
+	opacity: 0.35;
+	transition: opacity 120ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.pl-dim {
+		transition: none;
+	}
+}
+
+/* Status bar */
+.pl-status {
+	cursor: var(--cursor-link);
+}
+
+/* Panel */
+.pl-panel {
+	padding: 0 12px 16px;
+}
+
+.pl-section {
+	margin-top: 18px;
+}
+
+.pl-section h3 {
+	margin: 0 0 8px;
+	font-size: var(--font-ui-small);
+	font-weight: var(--font-semibold);
+	color: var(--text-muted);
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+}
+
+.pl-empty,
+.pl-note {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	line-height: 1.5;
+}
+
+.pl-note {
+	margin-top: 8px;
+}
+
+.pl-stat-grid {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 8px;
+}
+
+.pl-stat {
+	background-color: var(--background-secondary);
+	border-radius: var(--radius-s);
+	padding: 8px 10px;
+}
+
+.pl-stat-value {
+	font-size: var(--font-ui-medium);
+	font-weight: var(--font-semibold);
+	color: var(--text-normal);
+}
+
+.pl-stat-label {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+
+/* Rhythm map: one bar per sentence, width proportional to length. A flat band of equal
+ * bars is the thing the user is meant to notice. */
+.pl-rhythm {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.pl-bar {
+	height: 6px;
+	border-radius: 3px;
+	cursor: var(--cursor-link);
+	min-width: 4px;
+}
+
+.pl-bar:hover {
+	filter: brightness(1.25);
+}
+
+.pl-bar-short {
+	background-color: var(--color-blue);
+}
+
+.pl-bar-medium {
+	background-color: var(--color-green);
+}
+
+.pl-bar-long {
+	background-color: var(--color-orange);
+}
+
+.pl-bar-veryLong {
+	background-color: var(--color-red);
+}
+
+/* Echoes */
+.pl-echo-list {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.pl-echo {
+	display: flex;
+	justify-content: space-between;
+	align-items: baseline;
+	padding: 4px 6px;
+	border-radius: var(--radius-s);
+	cursor: var(--cursor-link);
+}
+
+.pl-echo:hover {
+	background-color: var(--background-modifier-hover);
+}
+
+.pl-echo-term {
+	color: var(--text-normal);
+}
+
+.pl-echo-count {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	font-variant-numeric: tabular-nums;
+}
+
+/* Revision delta */
+.pl-delta {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.pl-delta-row {
+	display: flex;
+	justify-content: space-between;
+	align-items: baseline;
+	padding: 3px 6px;
+}
+
+.pl-delta-label {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+.pl-delta-value {
+	font-variant-numeric: tabular-nums;
+	font-weight: var(--font-semibold);
+	color: var(--text-muted);
+}
+
+.pl-delta-value.is-better {
+	color: var(--color-green);
+}
+
+.pl-delta-value.is-worse {
+	color: var(--color-orange);
+}
+
+/* Pro surfaces */
+.pl-pro-pill {
+	margin-left: 8px;
+	padding: 1px 6px;
+	border-radius: 999px;
+	font-size: var(--font-ui-smaller);
+	font-weight: var(--font-bold);
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	background-color: color-mix(in srgb, var(--interactive-accent) 18%, transparent);
+	color: color-mix(in srgb, var(--interactive-accent) 62%, var(--text-normal));
+}
+
+.pl-setting-locked {
+	opacity: 0.7;
+}
+
+.pl-locked {
+	background-color: var(--background-secondary);
+	border-radius: var(--radius-s);
+	padding: 10px 12px;
+}
+
+.pl-locked-text {
+	color: var(--text-normal);
+	margin-bottom: 4px;
+}
+
+.pl-license-status {
+	margin: 0 0 12px;
+	padding: 10px 12px;
+	border-radius: var(--radius-s);
+	background-color: var(--background-secondary);
+	color: var(--text-muted);
+}
+
+.pl-license-status.is-pro {
+	color: var(--text-normal);
+	background-color: color-mix(in srgb, var(--interactive-accent) 10%, var(--background-secondary));
+}
+
+.pl-license-status p {
+	margin: 0 0 6px;
+}
+
+.pl-pro-btn {
+	display: inline-block;
+	padding: 6px 12px;
+	border-radius: var(--radius-s);
+	background-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+	font-weight: var(--font-semibold);
+	text-decoration: none;
+}
+
+.pl-pro-btn:hover {
+	background-color: var(--interactive-accent-hover);
+	color: var(--text-on-accent);
+}
+
+.pl-upgrade-inline {
+	color: var(--text-accent);
+}
+
+.pl-upsell-lead {
+	color: var(--text-normal);
+	margin-bottom: 6px;
+}
+
+.pl-upsell-sub {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	margin-bottom: 14px;
+}
+
+.pl-upsell-actions {
+	display: flex;
+	gap: 10px;
+	align-items: center;
+}
+
+/* High-contrast mode: tints vanish, so lean entirely on the underline. */
+@media (forced-colors: active) {
+	.pl-mark {
+		background-color: transparent;
+		text-decoration-color: Highlight;
+	}
+
+	.pl-heat {
+		background-color: transparent;
+	}
+
+	.pl-dim {
+		opacity: 1;
+	}
+}
