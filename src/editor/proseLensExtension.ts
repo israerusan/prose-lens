@@ -44,13 +44,17 @@ export function proseLensExtension(host: EditorHost): Extension {
 					return;
 				}
 				// A settings save calls workspace.updateOptions(), which reconfigures every
-				// editor and lands here. That is how a rule toggle or a Pro unlock reaches
-				// the open notes without this extension holding a reference to the plugin's
+				// editor and lands here. That is how a rule toggle or a Pro unlock reaches the
+				// open notes without this extension holding a reference to the plugin's
 				// internals — or the plugin reaching into CodeMirror's.
+				//
+				// Debounced like a keystroke, NOT run immediately: dragging a threshold slider
+				// fires a save per step, and an immediate re-analysis per step would re-run the
+				// whole pipeline in every open editor on every pixel of the drag.
 				if (host.settingsEpoch !== this.epoch) {
 					this.epoch = host.settingsEpoch;
 					this.lastText = null;
-					this.schedule(0);
+					this.schedule(DEBOUNCE_MS);
 				}
 			}
 
@@ -75,16 +79,23 @@ export function proseLensExtension(host: EditorHost): Extension {
 
 			private run(): void {
 				const settings = host.settings;
-				const text = this.view.state.doc.toString();
 
-				// The size cap is an honest guard, not a silent one: main.ts reports "note
-				// too large" in the status bar rather than pretending the grade is zero.
+				// Both cheap checks happen BEFORE doc.toString(). Materialising a 2MB note into
+				// a string only to discover it is over the cap would pay the whole allocation on
+				// every debounce tick, which is exactly what the cap exists to avoid.
 				const muted = host.isMuted(this.view);
-				const tooLarge = text.length > settings.maxNoteChars;
+				const tooLarge = this.view.state.doc.length > settings.maxNoteChars;
 				if (muted || tooLarge) {
+					// Forget the last text. Otherwise, restoring the document to the text that was
+					// analyzed before it was muted or overflowed would compare equal below, the run
+					// would be skipped as a no-op, and the marks — already cleared to nothing —
+					// would never come back.
+					this.lastText = null;
 					this.publish(null);
 					return;
 				}
+
+				const text = this.view.state.doc.toString();
 
 				// Identical text after a debounce (undo/redo round trip, or a change that
 				// cancelled itself out) — skip the work.

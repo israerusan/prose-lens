@@ -115,4 +115,22 @@ analyze(("The report was quickly written by many experts. ").repeat(500), { isPr
 const elapsed = Date.now() - started;
 assert.ok(elapsed < 10000, `analysis of pathological input took ${elapsed}ms`);
 
+
+
+// --- one lexical mark per word ---------------------------------------------------------
+// "clearly" is both an adverb and a weasel word. Marking it twice painted two overlapping
+// decorations on one word and showed the reader two tooltips for one problem.
+const clearly = analyze("It clearly works.").marks.filter((mark) => mark.word === "clearly");
+assert.equal(clearly.length, 1, "a word gets at most one lexical mark");
+assert.equal(clearly[0].rule, "weasel", "weasel beats adverb — the advice is more specific");
+
+// Precedence must not swallow the other rules: a plain adverb is still an adverb.
+assert.equal(analyze("He walked quickly.").marks.filter((m) => m.word === "quickly")[0].rule, "adverb");
+
+// --- the masked text rides along on the result -------------------------------------------
+// The panel's echo pass reads it instead of re-reading the editor and re-masking the whole
+// note on every keystroke.
+const carried = analyze("The file was deleted.");
+assert.equal(typeof carried.masked, "string");
+assert.equal(carried.masked.length, "The file was deleted.".length);
 console.log("ok  rule-engine.test.mjs");

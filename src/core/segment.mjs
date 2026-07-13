@@ -69,20 +69,40 @@ export function splitBlocks(text, masked) {
 	return blocks;
 }
 
+/**
+ * One ICU segmenter for the whole module, built once.
+ *
+ * `new Intl.Segmenter()` is an ICU constructor call, and the first version built a fresh
+ * one for EVERY block of EVERY analysis — so a 200-paragraph note paid 200 ICU
+ * constructions per keystroke. It is stateless; one instance is enough.
+ *
+ * `undefined` means "not built yet", `null` means "this runtime has no Segmenter, use the
+ * regex path" — so a runtime without it is probed once rather than on every block.
+ */
+let segmenter;
+
+function getSegmenter() {
+	if (segmenter !== undefined) return segmenter;
+	try {
+		segmenter =
+			typeof Intl !== "undefined" && typeof Intl.Segmenter === "function"
+				? new Intl.Segmenter("en", { granularity: "sentence" })
+				: null;
+	} catch {
+		segmenter = null;
+	}
+	return segmenter;
+}
+
 /** Intl.Segmenter when the runtime has it (Obsidian desktop + mobile do), else regex. */
 function sentenceSpans(chunk) {
-	const Segmenter = typeof Intl !== "undefined" ? Intl.Segmenter : undefined;
-	if (typeof Segmenter === "function") {
-		try {
-			const seg = new Segmenter("en", { granularity: "sentence" });
-			const spans = [];
-			for (const part of seg.segment(chunk)) {
-				spans.push({ from: part.index, to: part.index + part.segment.length });
-			}
-			return spans;
-		} catch {
-			// Fall through to the regex path.
+	const seg = getSegmenter();
+	if (seg) {
+		const spans = [];
+		for (const part of seg.segment(chunk)) {
+			spans.push({ from: part.index, to: part.index + part.segment.length });
 		}
+		return spans;
 	}
 	return regexSentenceSpans(chunk);
 }

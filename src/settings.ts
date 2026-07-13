@@ -90,6 +90,11 @@ export class ProseLensSettingTab extends PluginSettingTab {
 		super(plugin.app, plugin);
 	}
 
+	/** Nothing typed into a coalesced control may be lost when the tab closes. */
+	hide(): void {
+		void this.plugin.flushPendingSave();
+	}
+
 	display(): void {
 		this.containerEl.empty();
 		this.renderLicense();
@@ -149,10 +154,12 @@ export class ProseLensSettingTab extends PluginSettingTab {
 					.setValue(this.plugin.settings.licenseKey)
 					.onChange((value) => {
 						this.plugin.settings.licenseKey = value;
+						// queueSave, not saveSettings: this fires per keystroke, and each save bumps
+						// settingsEpoch, which makes every open editor re-analyse its whole note.
 						// Re-verify per keystroke (offline, microseconds) but only rebuild the
 						// tab when Pro actually flips — display() empties containerEl, which
 						// would destroy the input the user is typing into.
-						void this.plugin.refreshLicense(true).then((flipped) => {
+						void this.plugin.refreshLicense(true, true).then((flipped) => {
 							if (flipped) this.display();
 						});
 					})
@@ -233,12 +240,13 @@ export class ProseLensSettingTab extends PluginSettingTab {
 					.setLimits(15, 45, 1)
 					.setValue(this.plugin.settings.longSentenceWords)
 					.setDynamicTooltip()
-					.onChange(async (value) => {
+					.onChange((value) => {
 						this.plugin.settings.longSentenceWords = value;
 						if (this.plugin.settings.veryLongSentenceWords <= value) {
 							this.plugin.settings.veryLongSentenceWords = value + 5;
 						}
-						await this.plugin.saveSettings();
+						// A slider fires once per step; coalesce the drag into one save.
+						this.plugin.queueSave();
 					})
 			);
 
@@ -250,12 +258,12 @@ export class ProseLensSettingTab extends PluginSettingTab {
 					.setLimits(25, 70, 1)
 					.setValue(this.plugin.settings.veryLongSentenceWords)
 					.setDynamicTooltip()
-					.onChange(async (value) => {
+					.onChange((value) => {
 						this.plugin.settings.veryLongSentenceWords = Math.max(
 							value,
 							this.plugin.settings.longSentenceWords + 1
 						);
-						await this.plugin.saveSettings();
+						this.plugin.queueSave();
 					})
 			);
 	}
@@ -329,9 +337,9 @@ export class ProseLensSettingTab extends PluginSettingTab {
 					.setLimits(50000, 1000000, 50000)
 					.setValue(this.plugin.settings.maxNoteChars)
 					.setDynamicTooltip()
-					.onChange(async (value) => {
+					.onChange((value) => {
 						this.plugin.settings.maxNoteChars = value;
-						await this.plugin.saveSettings();
+						this.plugin.queueSave();
 					})
 			);
 	}

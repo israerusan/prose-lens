@@ -4,19 +4,25 @@
  * `maskText` returns a string of EXACTLY the same length as its input, where every
  * character that is not prose has been replaced by a space. Every downstream module
  * (segmentation, rules, readability) runs on the masked string, so an offset in the
- * masked text is the same offset in the real document — no coordinate mapping, and
- * no rule can ever fire inside a code fence, a URL, or a math block.
+ * masked text is the same offset in the real document — no coordinate mapping, and no
+ * rule can ever fire inside a code fence, a URL, or a math block.
  *
  * This is the thing the existing plugins in this space get wrong: they lint the raw
- * Markdown, so `const passive_result = was_computed(x)` inside a code block gets
- * flagged as passive voice, and a long URL counts as a 40-word sentence.
+ * Markdown, so `const passive_result = was_computed(x)` inside a code block gets flagged
+ * as passive voice, and a long URL counts as a 40-word sentence.
+ *
+ * The delimiter scanners below are hand-rolled rather than regex-based, deliberately.
+ * Code spans and fences have variable-length delimiters (CommonMark: a run of N
+ * backticks is closed only by a run of N backticks), which a regex either gets wrong or
+ * gets right at the cost of catastrophic backtracking — and every one of these runs on
+ * arbitrary prose on every keystroke.
  *
  * What gets masked:
  *   - YAML frontmatter (only when it opens on line 1)
- *   - fenced code (``` and ~~~), including the fence lines
- *   - indented code blocks (4 spaces / a tab), when not inside a list
- *   - inline code spans (`x`, ``x``)
- *   - math ($$...$$ block and $...$ inline)
+ *   - fenced code (``` / ~~~, any fence length, INCLUDING inside a blockquote or callout)
+ *   - indented code blocks (4 spaces / a tab), when not a list continuation
+ *   - inline code spans of any backtick-run length
+ *   - math ($$...$$ block and $...$ inline — but not currency)
  *   - HTML comments and tags
  *   - wikilinks and embeds ([[...]], ![[...]]) in full
  *   - Markdown link/image URL parts — the visible [text] survives, the (url) does not
@@ -26,8 +32,8 @@
  *   - table rows in full
  *   - leading list/quote markers and emphasis punctuation (the words survive)
  *
- * Masking is applied in that order; each pass only overwrites characters that are
- * still unmasked, so a `#tag` inside a code fence can't "unmask" anything.
+ * Each pass only blanks characters; a later pass can never resurrect one. Fenced code is
+ * masked FIRST so a `#tag` or a `$x$` inside a code block can never be re-read as prose.
  */
 
 const SPACE = " ";
@@ -66,7 +72,7 @@ export function maskText(text) {
 	return out.join("");
 }
 
-/** Line start offsets, for the line-oriented passes. */
+/** Line start/end offsets, for the line-oriented passes. */
 function lineRanges(text) {
 	const lines = [];
 	let start = 0;
@@ -80,11 +86,29 @@ function lineRanges(text) {
 	return lines;
 }
 
+/**
+ * Strip up to three leading spaces and any blockquote/callout markers, returning where
+ * the line's real content starts. `> ``` ` is a code fence; without this it reads as
+ * prose and every rule fires inside the block.
+ */
+function contentStart(raw) {
+	let i = 0;
+	// Leading indent (up to 3 spaces keeps it out of indented-code territory).
+	while (i < raw.length && i < 3 && raw[i] === " ") i++;
+	// Any number of nested blockquote markers, each optionally followed by one space.
+	for (;;) {
+		if (raw[i] !== ">") break;
+		i++;
+		if (raw[i] === " ") i++;
+		while (i < raw.length && raw[i] === " ") i++;
+	}
+	return i;
+}
+
 function maskFrontmatter(text, out) {
 	if (!text.startsWith("---")) return;
 	const firstBreak = text.indexOf("\n");
 	if (firstBreak === -1) return;
-	// The opening fence must be exactly `---` on its own line.
 	if (text.slice(0, firstBreak).trim() !== "---") return;
 	const lines = lineRanges(text);
 	for (let i = 1; i < lines.length; i++) {
@@ -97,70 +121,134 @@ function maskFrontmatter(text, out) {
 	// Unterminated frontmatter: mask nothing rather than swallow the whole note.
 }
 
+/**
+ * Fenced code, honouring both CommonMark rules the first version got wrong:
+ *   - a fence may sit inside a blockquote or a callout (`> ```js`)
+ *   - a fence of N markers is closed only by a run of AT LEAST N of the same marker,
+ *     so a 4-backtick fence is NOT closed by an inner ``` line
+ */
 function maskFencedCode(text, out) {
-	const lines = lineRanges(text);
-	let fence = null; // { marker: "```" | "~~~", indent: number }
-	for (const { from, to } of lines) {
+	let open = null; // { char: "`" | "~", length: number }
+
+	for (const { from, to } of lineRanges(text)) {
 		const raw = text.slice(from, to);
-		const trimmed = raw.trimStart();
-		const isBacktick = trimmed.startsWith("```");
-		const isTilde = trimmed.startsWith("~~~");
-		if (fence === null) {
-			if (isBacktick || isTilde) {
-				fence = { marker: isBacktick ? "```" : "~~~" };
+		const start = contentStart(raw);
+		const fence = fenceAt(raw, start);
+
+		if (open === null) {
+			if (fence) {
+				open = fence;
 				blank(out, from, to);
 			}
 			continue;
 		}
+
 		blank(out, from, to);
-		if (trimmed.startsWith(fence.marker)) fence = null;
+		// A closing fence must use the same character and be at least as long. An info
+		// string is only allowed on the OPENING fence, so a closer must be bare.
+		if (
+			fence &&
+			fence.char === open.char &&
+			fence.length >= open.length &&
+			raw.slice(start + fence.length).trim() === ""
+		) {
+			open = null;
+		}
 	}
 }
 
+/** The fence run beginning at `index`, or null. */
+function fenceAt(raw, index) {
+	const char = raw[index];
+	if (char !== "`" && char !== "~") return null;
+	let length = 0;
+	while (raw[index + length] === char) length++;
+	if (length < 3) return null;
+	return { char, length };
+}
+
 /**
- * Whole-line masks that depend on what the line IS: headings, table rows, indented
- * code. Also blanks the leading marker of list items and blockquotes (the words on
- * the line survive — only the `- `, `> `, `1. ` prefix is dropped).
+ * Whole-line masks that depend on what the line IS: headings, table rows, indented code.
+ * Also blanks the leading marker of list items and blockquotes — the words on the line
+ * survive, only the `- `, `> `, `1. ` prefix goes.
  */
 function maskLineKinds(text, out) {
 	for (const { from, to } of lineRanges(text)) {
 		const raw = text.slice(from, to);
 		if (raw.trim() === "") continue;
-		// Already fully masked (inside a fence)? Skip.
+		// Already fully masked (inside a fence)? Leave it.
 		if (out.slice(from, to).join("").trim() === "") continue;
 
-		// Heading: not a prose sentence. Mask the whole line.
-		if (/^\s{0,3}#{1,6}\s/.test(raw)) {
+		const start = contentStart(raw);
+		const body = raw.slice(start);
+
+		if (/^#{1,6}\s/.test(body)) {
 			blank(out, from, to);
 			continue;
 		}
-		// Setext underline and thematic breaks.
-		if (/^\s{0,3}(={2,}|-{3,}|\*{3,}|_{3,})\s*$/.test(raw)) {
+		if (/^(={2,}|-{3,}|\*{3,}|_{3,})\s*$/.test(body)) {
 			blank(out, from, to);
 			continue;
 		}
-		// Table row.
-		if (/^\s{0,3}\|/.test(raw)) {
+		if (body.startsWith("|")) {
 			blank(out, from, to);
 			continue;
 		}
-		// Indented code block (4+ spaces or a tab, and not a list continuation).
-		if (/^(\t| {4,})\S/.test(raw) && !/^(\t| {4,})\s*([-*+]|\d{1,9}[.)])\s/.test(raw)) {
+		// Indented code: 4+ spaces or a tab, and not a list item.
+		//
+		// The two tests are kept disjoint on purpose. The original wrote the second as
+		// /^(\t| {4,})\s*(marker)/ — two greedy quantifiers competing for the SAME run of
+		// spaces, which backtracks quadratically: 16,000 leading spaces took 147ms, on
+		// every keystroke. `[ \t]+` consumes the run exactly once.
+		if (/^(\t| {4,})\S/.test(raw) && !/^[ \t]+(?:[-*+]|\d{1,9}[.)])\s/.test(raw)) {
 			blank(out, from, to);
 			continue;
 		}
-		// Leading blockquote and list markers: blank the marker, keep the text.
+
 		const marker = /^\s{0,6}(>\s?|[-*+]\s+|\d{1,9}[.)]\s+|\[[ xX]\]\s+)+/.exec(raw);
 		if (marker) blank(out, from, from + marker[0].length);
 	}
 }
 
-/** Inline code spans: `x`, ``x with a ` in it``. Bounded — no nested quantifiers. */
+/**
+ * Inline code spans. A run of N backticks opens a span that only a run of exactly N
+ * backticks closes (CommonMark). The old regex capped N at 3, so ````x```` leaked its
+ * contents straight into the rule engine.
+ */
 function maskInlineCode(text, out) {
-	const re = /(`{1,3})[^`\n]{0,2000}?\1/g;
-	let m;
-	while ((m = re.exec(text)) !== null) {
-		blank(out, m.index, m.index + m[0].length);
+	let i = 0;
+	while (i < text.length) {
+		if (text[i] !== "`") {
+			i++;
+			continue;
+		}
+		let openLength = 0;
+		while (text[i + openLength] === "`") openLength++;
+
+		// Look for a closing run of exactly the same length, on the same "paragraph".
+		let j = i + openLength;
+		let closeStart = -1;
+		while (j < text.length) {
+			if (text[j] !== "`") {
+				j++;
+				continue;
+			}
+			let closeLength = 0;
+			while (text[j + closeLength] === "`") closeLength++;
+			if (closeLength === openLength) {
+				closeStart = j;
+				break;
+			}
+			j += closeLength;
+		}
+
+		if (closeStart === -1) {
+			// No closer: the backticks are literal text, not a span.
+			i += openLength;
+			continue;
+		}
+		blank(out, i, closeStart + openLength);
+		i = closeStart + openLength;
 	}
 }
 
@@ -171,9 +259,47 @@ function maskMath(text, out) {
 	while ((m = block.exec(text)) !== null) {
 		blank(out, m.index, m.index + m[0].length);
 	}
-	const inline = /\$[^$\n]{1,500}?\$/g;
-	while ((m = inline.exec(text)) !== null) {
-		blank(out, m.index, m.index + m[0].length);
+	maskInlineMath(text, out);
+}
+
+/**
+ * Inline math, WITHOUT eating currency.
+ *
+ * The old regex was /\$[^$\n]{1,500}?\$/g — any two dollar signs on a line. So
+ * "It cost $5 and the report was written by experts for $10" silently blanked the entire
+ * clause between the two amounts, and the analysis went blind to real prose. Money in a
+ * note is far more common than inline LaTeX.
+ *
+ * The discriminator is the one LaTeX itself uses: a math span may not open with
+ * whitespace or a digit (`$5` is money, `$x` is math), and may not close with whitespace.
+ */
+function maskInlineMath(text, out) {
+	let i = 0;
+	while (i < text.length) {
+		if (text[i] !== "$") {
+			i++;
+			continue;
+		}
+		const after = text[i + 1];
+		if (after === undefined || /[\s\d]/.test(after)) {
+			i++;
+			continue;
+		}
+		let j = i + 1;
+		let close = -1;
+		while (j < text.length && text[j] !== "\n" && j - i <= 500) {
+			if (text[j] === "$" && !/\s/.test(text[j - 1])) {
+				close = j;
+				break;
+			}
+			j++;
+		}
+		if (close === -1) {
+			i++;
+			continue;
+		}
+		blank(out, i, close + 1);
+		i = close + 1;
 	}
 }
 
@@ -212,8 +338,8 @@ function maskMarkdownLinks(text, out) {
 			blank(out, start, end); // alt text is not prose the reader reads
 			continue;
 		}
-		blank(out, start, textStart); // "![" / "["
-		blank(out, textEnd, end); // "](url)"
+		blank(out, start, textStart);
+		blank(out, textEnd, end);
 	}
 }
 
@@ -244,14 +370,13 @@ function maskTagsAndRefs(text, out) {
 
 /**
  * Emphasis and highlight punctuation only — the words inside survive. Without this,
- * "**obviously**" tokenizes as "obviously" glued to asterisks and never matches a
- * word list.
+ * "**obviously**" tokenizes as "obviously" glued to asterisks and never matches a list.
  */
 function maskEmphasis(text, out) {
 	const re = /(\*{1,3}|_{1,3}|={2}|~{2})/g;
 	let m;
 	while ((m = re.exec(text)) !== null) {
-		// Don't blank an underscore that sits inside a word (snake_case).
+		// Don't blank an underscore inside a word (snake_case).
 		const before = text[m.index - 1] ?? " ";
 		const after = text[m.index + m[0].length] ?? " ";
 		if (m[0][0] === "_" && /\w/.test(before) && /\w/.test(after)) continue;

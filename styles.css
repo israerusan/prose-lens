@@ -168,6 +168,9 @@
 	border-radius: 3px;
 	cursor: var(--cursor-link);
 	min-width: 4px;
+	/* The bar length is data, published by the view as --pl-bar-width. A theme can
+	 * override the ramp, the height and the radius; only the length is ours. */
+	width: var(--pl-bar-width, 100%);
 }
 
 .pl-bar:hover {
@@ -279,6 +282,12 @@
 .pl-locked-text {
 	color: var(--text-normal);
 	margin-bottom: 4px;
+}
+
+.pl-locked-sub {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	margin-bottom: 10px;
 }
 
 .pl-license-status {

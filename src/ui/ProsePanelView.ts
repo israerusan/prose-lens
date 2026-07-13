@@ -1,24 +1,36 @@
-import { ItemView, Setting, type WorkspaceLeaf } from "obsidian";
+import { ItemView, type WorkspaceLeaf } from "obsidian";
 import type ProseLensPlugin from "../main";
 import type { Analysis } from "../core/types.d.mts";
 import { rhythm } from "../core/rhythm.mjs";
 import { findEchoes } from "../core/echo.mjs";
+import type { Echo } from "../core/echo.d.mts";
 import { diffSnapshots, hasMoved, snapshot } from "../core/delta.mjs";
 import { easeLabel } from "../core/readability.mjs";
-import { maskText } from "../core/mask.mjs";
 import { createExternalLink } from "../settings";
 import { PRO_PRICE_LABEL, PRO_UNLOCK_SUMMARY, PURCHASE_URL } from "../product";
 
 export const VIEW_TYPE_PROSE_PANEL = "prose-lens-panel";
 
 /**
+ * Echoes, keyed by the analysis that produced them.
+ *
+ * The echo pass is the most expensive thing in the panel, and render() runs on EVERY
+ * analysis — so without this the panel doubled the per-keystroke cost of the whole
+ * plugin. A WeakMap keyed on the Analysis object means each analysis is scanned at most
+ * once, and the entry dies with it.
+ */
+const echoCache = new WeakMap<Analysis, Echo[]>();
+
+/**
  * The side panel: the rhythm map (free) plus the echo detector and revision delta (Pro).
  *
- * It renders from whatever the active editor last published — it never analyses anything
- * itself, so opening the panel costs nothing and can never disagree with the marks in the
- * editor.
+ * It renders from whatever the active editor last published and never re-reads the
+ * document, so opening the panel cannot disagree with the marks in the editor.
  */
 export class ProsePanelView extends ItemView {
+	/** Sentence/echo offsets for the currently rendered rows, addressed by row index. */
+	private targets: number[] = [];
+
 	constructor(
 		leaf: WorkspaceLeaf,
 		private plugin: ProseLensPlugin
@@ -39,17 +51,34 @@ export class ProsePanelView extends ItemView {
 	}
 
 	async onOpen(): Promise<void> {
+		// ONE delegated listener for the whole panel, registered once.
+		//
+		// The first version called registerDomEvent per rhythm bar and per echo row inside
+		// render() — and render() runs on every analysis. Component.registerDomEvent only
+		// releases its registrations on view unload, so every keystroke added hundreds more
+		// that were never freed. Delegation means the listener count is exactly one, forever.
+		this.registerDomEvent(this.contentEl, "click", (event) => {
+			const target = event.target;
+			if (!(target instanceof HTMLElement)) return;
+			const row = target.closest<HTMLElement>("[data-pl-target]");
+			if (!row) return;
+			const index = Number(row.dataset.plTarget);
+			const offset = this.targets[index];
+			if (typeof offset === "number") this.plugin.revealOffset(offset);
+		});
 		this.render();
 	}
 
 	async onClose(): Promise<void> {
 		this.contentEl.empty();
+		this.targets = [];
 	}
 
 	render(): void {
 		const root = this.contentEl;
 		root.empty();
 		root.addClass("pl-panel");
+		this.targets = [];
 
 		const analysis = this.plugin.currentAnalysis();
 		if (!analysis || analysis.stats.words === 0) {
@@ -61,6 +90,12 @@ export class ProsePanelView extends ItemView {
 		this.renderRhythm(root, analysis);
 		this.renderEcho(root, analysis);
 		this.renderDelta(root, analysis);
+	}
+
+	/** Register a click target and return the index to stamp on the row. */
+	private target(offset: number): string {
+		this.targets.push(offset);
+		return String(this.targets.length - 1);
 	}
 
 	private renderSummary(root: HTMLElement, analysis: Analysis): void {
@@ -98,14 +133,15 @@ export class ProsePanelView extends ItemView {
 		const map = section.createDiv({ cls: "pl-rhythm" });
 		result.lengths.forEach((length, index) => {
 			const bar = map.createDiv({ cls: `pl-bar pl-bar-${result.bands[index]}` });
-			// Width is data, not decoration — it has to be set per bar. setCssStyles keeps
-			// it out of an inline style attribute the review bot rejects.
-			bar.setCssStyles({ width: `${Math.max(4, Math.round((length / longest) * 100))}%` });
+			// The bar length IS the data — it cannot live in styles.css. It is published as a
+			// CSS custom property (which the review's no-static-styles rule explicitly exempts,
+			// and which a theme can still override) rather than as a raw inline `width`.
+			bar.setCssStyles({
+				"--pl-bar-width": `${Math.max(4, Math.round((length / longest) * 100))}%`,
+			} as Partial<CSSStyleDeclaration>);
 			bar.setAttr("aria-label", `${length} words`);
 			bar.setAttr("title", `${length} words`);
-			this.registerDomEvent(bar, "click", () => {
-				this.plugin.revealOffset(analysis.sentences[index].from);
-			});
+			bar.dataset.plTarget = this.target(analysis.sentences[index].from);
 		});
 
 		const flat = result.monotoneRuns.reduce((total, run) => total + run.length, 0);
@@ -128,8 +164,14 @@ export class ProsePanelView extends ItemView {
 			return;
 		}
 
-		const masked = maskText(this.plugin.currentText() ?? "");
-		const echoes = findEchoes(masked, analysis.sentences);
+		// The masked text rides along on the analysis, so there is no second read of the
+		// editor and no second mask of the whole note here.
+		let echoes = echoCache.get(analysis);
+		if (!echoes) {
+			echoes = findEchoes(analysis.masked, analysis.sentences);
+			echoCache.set(analysis, echoes);
+		}
+
 		if (echoes.length === 0) {
 			section.createDiv({ cls: "pl-empty", text: "Nothing repeats. Good." });
 			return;
@@ -140,9 +182,7 @@ export class ProsePanelView extends ItemView {
 			const row = list.createDiv({ cls: "pl-echo" });
 			row.createSpan({ cls: "pl-echo-term", text: echo.term });
 			row.createSpan({ cls: "pl-echo-count", text: `${echo.count}×` });
-			this.registerDomEvent(row, "click", () => {
-				this.plugin.revealOffset(echo.offsets[0]);
-			});
+			row.dataset.plTarget = this.target(echo.offsets[0]);
 		}
 	}
 
@@ -186,9 +226,7 @@ export class ProsePanelView extends ItemView {
 	private renderLocked(section: HTMLElement, promise: string): void {
 		const locked = section.createDiv({ cls: "pl-locked" });
 		locked.createDiv({ cls: "pl-locked-text", text: promise });
-		new Setting(locked)
-			.setDesc(`Unlock ${PRO_UNLOCK_SUMMARY}.`)
-			.addExtraButton((button) => button.setIcon("lock").setDisabled(true).setTooltip("Pro feature"));
+		locked.createDiv({ cls: "pl-locked-sub", text: `Unlock ${PRO_UNLOCK_SUMMARY}.` });
 		createExternalLink(locked, {
 			cls: "pl-pro-btn",
 			text: `Get Pro — ${PRO_PRICE_LABEL}`,

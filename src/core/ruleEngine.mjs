@@ -3,9 +3,9 @@
  * enabled rule, applies the Pro gate and the user's ignore list, and returns marks +
  * sentences + stats in one pass.
  *
- * Everything here is pure: no `obsidian` import, no I/O, no clock. That is what lets
- * the whole linguistic layer be tested under plain Node with zero mocking, and it is
- * why the CodeMirror extension can stay a thin rendering shell.
+ * Everything here is pure: no `obsidian` import, no I/O, no clock. That is what lets the
+ * whole linguistic layer be tested under plain Node with zero mocking, and it is why the
+ * CodeMirror extension can stay a thin rendering shell.
  */
 
 import { maskText } from "./mask.mjs";
@@ -41,6 +41,25 @@ export const DEFAULT_RULE_OPTIONS = Object.freeze({
 });
 
 /**
+ * Precedence for the single-word lexical rules. A word gets AT MOST ONE of these.
+ *
+ * "clearly" is both an adverb and a weasel word, and marking it twice paints two
+ * overlapping decorations on one word and shows the reader two tooltips for one problem.
+ * Weasel beats hedge beats adverb because that is the order of how specific the advice
+ * is: "say who, or how many" is more actionable than "this is an adverb".
+ */
+const WORD_RULES = [
+	{ rule: "weasel", set: WEASEL_WORDS, severity: "info", message: "Weasel word — say who, or how many" },
+	{ rule: "hedge", set: HEDGE_WORDS, severity: "info", message: "Hedge — it weakens the claim" },
+];
+
+/** Phrase lists, matched as token runs rather than substrings. */
+const PHRASE_RULES = [
+	{ rule: "hedge", phrases: HEDGE_PHRASES, severity: "info", message: "Hedge — it weakens the claim" },
+	{ rule: "cliche", phrases: CLICHE_PHRASES, severity: "info", message: "Cliche — the reader skips it" },
+];
+
+/**
  * Analyze a document.
  *
  * @param {string} text raw note content
@@ -60,8 +79,8 @@ export function analyze(text, options = {}) {
 	const enabled = (rule) => {
 		if (opts.rules[rule] === false) return false;
 		// The Pro gate lives here, not in the UI: a free user's analysis simply never
-		// produces the mark, so there is nothing to leak into the DOM and nothing to
-		// strip out later.
+		// produces the mark, so there is nothing to leak into the DOM and nothing to strip
+		// out later.
 		if (isProOnlyRule(rule) && opts.isPro !== true) return false;
 		return true;
 	};
@@ -91,14 +110,32 @@ export function analyze(text, options = {}) {
 		}
 	}
 
+	const activeWordRules = WORD_RULES.filter((entry) => enabled(entry.rule));
+	const markAdverbs = enabled("adverb");
+
 	for (const sentence of sentences) {
 		const wordList = words(masked, sentence.from, sentence.to);
 
-		if (enabled("adverb")) {
-			for (const word of wordList) {
-				const lower = word.text.toLowerCase();
-				if (lower.length < 4 || !lower.endsWith("ly")) continue;
-				if (ADVERB_EXCEPTIONS.has(lower)) continue;
+		for (let i = 0; i < wordList.length; i++) {
+			const word = wordList[i];
+			const lower = word.text.toLowerCase();
+
+			// One lexical mark per word, in precedence order.
+			let matched = false;
+			for (const entry of activeWordRules) {
+				if (!entry.set.has(lower)) continue;
+				marks.push({
+					from: word.from,
+					to: word.to,
+					rule: entry.rule,
+					severity: entry.severity,
+					message: entry.message,
+					word: lower,
+				});
+				matched = true;
+				break;
+			}
+			if (!matched && markAdverbs && lower.length >= 4 && lower.endsWith("ly") && !ADVERB_EXCEPTIONS.has(lower)) {
 				marks.push({
 					from: word.from,
 					to: word.to,
@@ -108,54 +145,25 @@ export function analyze(text, options = {}) {
 					word: lower,
 				});
 			}
-		}
 
-		if (enabled("hedge")) {
-			for (const word of wordList) {
-				const lower = word.text.toLowerCase();
-				if (!HEDGE_WORDS.has(lower)) continue;
-				marks.push({
-					from: word.from,
-					to: word.to,
-					rule: "hedge",
-					severity: "info",
-					message: "Hedge — it weakens the claim",
-					word: lower,
-				});
-			}
-		}
-
-		if (enabled("weasel")) {
-			for (const word of wordList) {
-				const lower = word.text.toLowerCase();
-				if (!WEASEL_WORDS.has(lower)) continue;
-				marks.push({
-					from: word.from,
-					to: word.to,
-					rule: "weasel",
-					severity: "info",
-					message: "Weasel word — say who, or how many",
-					word: lower,
-				});
-			}
-		}
-
-		if (enabled("doubled")) {
-			for (let i = 1; i < wordList.length; i++) {
+			if (enabled("doubled") && i > 0) {
 				const previous = wordList[i - 1];
-				const current = wordList[i];
-				if (previous.text.toLowerCase() !== current.text.toLowerCase()) continue;
-				// Only when they really are adjacent — "had had" is fine, "the ... the" is not
-				// a doubled word, it is two sentences' worth of distance.
-				if (masked.slice(previous.to, current.from).trim() !== "") continue;
-				marks.push({
-					from: previous.from,
-					to: current.to,
-					rule: "doubled",
-					severity: "warn",
-					message: "Doubled word",
-					word: current.text.toLowerCase(),
-				});
+				if (previous.text.toLowerCase() === lower) {
+					// Adjacency is judged on the ORIGINAL text, not the masked text. Masked text
+					// turns a code span into spaces, so `the \`x\` the` used to read as a doubled
+					// word and painted a mark straight across the code.
+					const gap = source.slice(previous.to, word.from);
+					if (/^\s*$/.test(gap)) {
+						marks.push({
+							from: previous.from,
+							to: word.to,
+							rule: "doubled",
+							severity: "warn",
+							message: "Doubled word",
+							word: lower,
+						});
+					}
+				}
 			}
 		}
 
@@ -172,15 +180,9 @@ export function analyze(text, options = {}) {
 		}
 	}
 
-	if (enabled("hedge")) {
-		marks.push(
-			...findPhrases(masked, HEDGE_PHRASES, "hedge", "info", "Hedge — it weakens the claim")
-		);
-	}
-	if (enabled("cliche")) {
-		marks.push(
-			...findPhrases(masked, CLICHE_PHRASES, "cliche", "info", "Cliche — the reader skips it")
-		);
+	const activePhraseRules = PHRASE_RULES.filter((entry) => enabled(entry.rule));
+	if (activePhraseRules.length > 0) {
+		marks.push(...findPhrases(masked, activePhraseRules));
 	}
 	if (enabled("deslop")) {
 		marks.push(...findSlop(masked, sentences));
@@ -193,45 +195,89 @@ export function analyze(text, options = {}) {
 	const counts = {};
 	for (const mark of marks) counts[mark.rule] = (counts[mark.rule] ?? 0) + 1;
 
-	return { marks, sentences, stats: computeStats(sentences, counts) };
+	return { marks, masked, sentences, stats: computeStats(sentences, counts) };
 }
 
-/** Whole-phrase, word-boundary matches of a lowercase phrase list in masked text. */
-function findPhrases(masked, phrases, rule, severity, message) {
-	const found = [];
-	const haystack = masked.toLowerCase();
-	for (const phrase of phrases) {
-		if (!phrase) continue;
-		let index = haystack.indexOf(phrase);
-		while (index !== -1) {
-			const before = index === 0 ? " " : haystack[index - 1];
-			const afterIndex = index + phrase.length;
-			const after = afterIndex >= haystack.length ? " " : haystack[afterIndex];
-			// Anchor on non-word boundaries so "just" doesn't match inside "adjust".
-			if (!/[a-z0-9]/.test(before) && !/[a-z0-9]/.test(after)) {
-				found.push({
-					from: index,
-					to: afterIndex,
-					rule,
-					severity,
-					message,
-					word: phrase,
-				});
-			}
-			index = haystack.indexOf(phrase, index + 1);
+/**
+ * Phrase matching as a single left-to-right token scan.
+ *
+ * The first version ran `indexOf` across the entire document once per phrase — about 89
+ * full-document scans plus two whole-document `toLowerCase()` copies, on every keystroke.
+ * This tokenizes the document once, buckets the phrases by their first word, and only
+ * looks at a phrase when its opening word actually appears. Cost is O(document), not
+ * O(phrases x document).
+ *
+ * Matching is token-based, so it is word-boundary-correct by construction: "just" can
+ * never match inside "adjust".
+ */
+function findPhrases(masked, ruleEntries) {
+	/** @type {Map<string, Array<{tokens: string[], entry: object}>>} */
+	const buckets = new Map();
+	for (const entry of ruleEntries) {
+		for (const phrase of entry.phrases) {
+			const tokens = String(phrase).toLowerCase().split(/\s+/).filter(Boolean);
+			if (tokens.length === 0) continue;
+			const bucket = buckets.get(tokens[0]);
+			if (bucket) bucket.push({ tokens, entry });
+			else buckets.set(tokens[0], [{ tokens, entry }]);
 		}
+	}
+	if (buckets.size === 0) return [];
+
+	const wordList = words(masked, 0, masked.length);
+	const lower = wordList.map((word) => word.text.toLowerCase());
+	const found = [];
+
+	for (let i = 0; i < wordList.length; i++) {
+		const candidates = buckets.get(lower[i]);
+		if (!candidates) continue;
+
+		// Longest phrase wins, so "at the end of the day" beats a shorter overlapping entry.
+		let best = null;
+		for (const candidate of candidates) {
+			const { tokens } = candidate;
+			if (i + tokens.length > wordList.length) continue;
+			let ok = true;
+			for (let t = 1; t < tokens.length; t++) {
+				if (lower[i + t] !== tokens[t]) {
+					ok = false;
+					break;
+				}
+				// The words must be adjacent prose, not separated by a masked construct.
+				const gap = masked.slice(wordList[i + t - 1].to, wordList[i + t].from);
+				if (gap.length > 8 || /\S/.test(gap)) {
+					ok = false;
+					break;
+				}
+			}
+			if (ok && (!best || tokens.length > best.tokens.length)) best = candidate;
+		}
+		if (!best) continue;
+
+		const last = wordList[i + best.tokens.length - 1];
+		found.push({
+			from: wordList[i].from,
+			to: last.to,
+			rule: best.entry.rule,
+			severity: best.entry.severity,
+			message: best.entry.message,
+			word: best.tokens.join(" "),
+		});
+		i += best.tokens.length - 1;
 	}
 	return found;
 }
 
 /**
- * Drop marks the user has muted. Ignores are matched on the mark's `word`, so a rule
- * with no word (passive voice, long sentence) can never be silenced by accident — it
- * has to be turned off as a rule instead.
+ * Drop marks the user has muted. Ignores are matched on the mark's `word`, so a rule with
+ * no word (passive voice, long sentence) can never be silenced by accident — it has to be
+ * turned off as a rule instead.
  */
 function applyIgnores(marks, ignoredWords) {
 	if (!Array.isArray(ignoredWords) || ignoredWords.length === 0) return marks;
-	const ignored = new Set(ignoredWords.map((word) => String(word).toLowerCase().trim()).filter(Boolean));
+	const ignored = new Set(
+		ignoredWords.map((word) => String(word).toLowerCase().trim()).filter(Boolean)
+	);
 	if (ignored.size === 0) return marks;
 	return marks.filter((mark) => !(mark.word && ignored.has(mark.word)));
 }

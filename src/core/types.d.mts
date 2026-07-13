@@ -63,4 +63,9 @@ export interface Analysis {
 	marks: Mark[];
 	sentences: Sentence[];
 	stats: Stats;
+	/**
+	 * The masked document. Carried on the result so the side panel can run the echo pass
+	 * without re-reading the editor and re-masking the whole note on every keystroke.
+	 */
+	masked: string;
 }

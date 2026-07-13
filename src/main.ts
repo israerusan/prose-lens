@@ -21,8 +21,16 @@ export default class ProseLensPlugin extends Plugin implements EditorHost {
 	private statusBar: HTMLElement | null = null;
 	/** The analysis of the editor the user is actually looking at. */
 	private activeAnalysis: Analysis | null = null;
+	/**
+	 * The last analysis of each open note. Switching tabs must not blank the status bar
+	 * for a note that has already been analyzed — the new editor may never fire an update,
+	 * so there would be nothing to re-publish and the panel would keep showing the previous
+	 * note's numbers. Evicted when the note is no longer open anywhere.
+	 */
+	private analyses = new Map<string, Analysis>();
 	/** Opening state per note, for the Pro revision delta. Session-scoped, never persisted. */
 	private baselines = new Map<string, Snapshot>();
+	private saveTimer: number | null = null;
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
@@ -96,12 +104,16 @@ export default class ProseLensPlugin extends Plugin implements EditorHost {
 			})
 		);
 
-		// A new note gets a fresh delta baseline; leaving one drops it, so reopening a
-		// note later measures that session's edits rather than a stale one.
 		this.registerEvent(
-			this.app.workspace.on("file-open", () => {
-				this.activeAnalysis = null;
-				this.renderStatusBar(null);
+			this.app.workspace.on("file-open", (file) => {
+				// Re-publish the note's own analysis rather than blanking. An already-open tab
+				// may never fire an editor update on the way back to it, so blanking here left
+				// the status bar empty and the panel showing the PREVIOUS note's numbers.
+				this.evictClosedNotes();
+				const path = file?.path ?? null;
+				this.activeAnalysis = path ? (this.analyses.get(path) ?? null) : null;
+				this.renderStatusBar(this.activeAnalysis);
+				this.refreshPanels();
 			})
 		);
 
@@ -109,7 +121,32 @@ export default class ProseLensPlugin extends Plugin implements EditorHost {
 	}
 
 	onunload(): void {
+		if (this.saveTimer !== null) {
+			window.clearTimeout(this.saveTimer);
+			this.saveTimer = null;
+		}
 		this.baselines.clear();
+		this.analyses.clear();
+	}
+
+	/**
+	 * Drop cached state for notes that are no longer open in any leaf. Both maps are keyed
+	 * by path and would otherwise grow for the whole session — and a stale baseline would
+	 * make "since you opened this note" quietly mean "since the first time you ever opened
+	 * it", which is not what the panel says.
+	 */
+	private evictClosedNotes(): void {
+		const open = new Set<string>();
+		for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
+			const view = leaf.view;
+			if (view instanceof MarkdownView && view.file) open.add(view.file.path);
+		}
+		for (const path of [...this.analyses.keys()]) {
+			if (!open.has(path)) this.analyses.delete(path);
+		}
+		for (const path of [...this.baselines.keys()]) {
+			if (!open.has(path)) this.baselines.delete(path);
+		}
 	}
 
 	// --- settings -------------------------------------------------------------
@@ -130,6 +167,10 @@ export default class ProseLensPlugin extends Plugin implements EditorHost {
 	}
 
 	async saveSettings(): Promise<void> {
+		if (this.saveTimer !== null) {
+			window.clearTimeout(this.saveTimer);
+			this.saveTimer = null;
+		}
 		await this.saveData(this.settings);
 		this.settingsEpoch++;
 		// Public API for "re-apply editor extensions" — every open editor re-runs its
@@ -139,13 +180,38 @@ export default class ProseLensPlugin extends Plugin implements EditorHost {
 	}
 
 	/**
+	 * Coalesced save, for controls that fire continuously.
+	 *
+	 * A slider fires an onChange per step and the license field fires one per keystroke.
+	 * Routing those straight to saveSettings() wrote data.json and bumped the epoch on
+	 * every one of them, and each epoch bump made every open editor re-run a whole-note
+	 * analysis. Dragging a threshold slider across its range was hundreds of writes and
+	 * hundreds of full re-analyses.
+	 */
+	queueSave(): void {
+		if (this.saveTimer !== null) window.clearTimeout(this.saveTimer);
+		this.saveTimer = window.setTimeout(() => {
+			this.saveTimer = null;
+			void this.saveSettings();
+		}, 400);
+	}
+
+	/** Flush a queued save immediately — the settings tab calls this when it closes. */
+	async flushPendingSave(): Promise<void> {
+		if (this.saveTimer === null) return;
+		await this.saveSettings();
+	}
+
+	/**
 	 * Re-verify the stored key and apply the resulting entitlement.
 	 *
-	 * @param persistUnchanged save even when nothing moved (the settings tab passes this
-	 *   so a key the user is typing survives a restart)
+	 * @param persistUnchanged save even when nothing moved (the settings tab passes this so a
+	 *   key the user is typing survives a restart)
+	 * @param coalesce queue the save instead of writing immediately — the license field fires
+	 *   this on every keystroke, and each immediate save re-analyses every open note
 	 * @returns true when Pro actually flipped — the caller re-renders on that, and only that
 	 */
-	async refreshLicense(persistUnchanged = false): Promise<boolean> {
+	async refreshLicense(persistUnchanged = false, coalesce = false): Promise<boolean> {
 		const verified = this.settings.licenseKey
 			? LicenseManager.verify(this.settings.licenseKey)
 			: null;
@@ -157,7 +223,12 @@ export default class ProseLensPlugin extends Plugin implements EditorHost {
 		);
 		this.settings.isPro = transition.isPro;
 		this.settings.licenseEmail = transition.email;
-		if (transition.persist) await this.saveSettings();
+		if (transition.persist) {
+			// A Pro flip is a real state change and must land now; a keystroke in the key field
+			// that changed nothing else can wait.
+			if (coalesce && !transition.flipped) this.queueSave();
+			else await this.saveSettings();
+		}
 		return transition.flipped;
 	}
 
@@ -195,10 +266,15 @@ export default class ProseLensPlugin extends Plugin implements EditorHost {
 	/** EditorHost. Called by the editor extension after each analysis. */
 	onAnalysis(view: EditorView, analysis: Analysis | null): void {
 		const path = this.pathFor(view);
-		// The first analysis of a note in this session becomes the delta baseline, so
-		// "since you opened this note" means exactly that.
-		if (path && analysis && !this.baselines.has(path)) {
-			this.baselines.set(path, snapshot(analysis.stats));
+		if (path) {
+			if (analysis) this.analyses.set(path, analysis);
+			else this.analyses.delete(path);
+			// The first analysis after the note is opened becomes the delta baseline. The
+			// entry is dropped when the note is closed (evictClosedNotes), so "since you
+			// opened this note" is literally true.
+			if (analysis && !this.baselines.has(path)) {
+				this.baselines.set(path, snapshot(analysis.stats));
+			}
 		}
 		if (!this.isActiveEditor(view)) return;
 		this.activeAnalysis = analysis;
@@ -221,12 +297,6 @@ export default class ProseLensPlugin extends Plugin implements EditorHost {
 		const path = this.app.workspace.getActiveViewOfType(MarkdownView)?.file?.path;
 		if (!path) return null;
 		return this.baselines.get(path) ?? null;
-	}
-
-	/** Raw text of the active note, for the panel's echo pass. */
-	currentText(): string | null {
-		const active = this.app.workspace.getActiveViewOfType(MarkdownView);
-		return active ? active.editor.getValue() : null;
 	}
 
 	/** Jump the active editor to a document offset — the panel's rows are clickable. */
