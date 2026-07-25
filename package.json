@@ -1,6 +1,6 @@
 {
   "name": "prose-lens",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Live readability and style marks in the Obsidian editor. Free marks and grade; Pro de-slop, echo, delta, and focus.",
   "main": "main.js",
   "type": "module",

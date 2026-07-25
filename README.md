@@ -1,97 +1,127 @@
 # Prose Lens
 
-**Live readability and style marks, right in the Obsidian editor.**
+Live readability and style feedback inside the Obsidian editor.
 
-Adverbs, passive voice, hedges, long sentences, and a live reading grade — highlighted as
-you type, in the note you are already writing. No web form, no round trip, no account.
-Your manuscript never leaves your vault.
+Write in Obsidian. See weak prose while you draft. Keep your text private.
 
-> Prose Lens **never writes to your notes**. It only highlights. Turn it off and every
-> character is exactly where you left it.
+Prose Lens highlights passive voice, adverbs, hedges, clichés, doubled words, long sentences, and more — directly in the note you are already writing. No browser tab. No copy-paste ritual. No account. No sending your draft to some random website.
 
-## Why it exists
+> Prose Lens never writes to your notes. It only highlights. Disable it and every character stays exactly where you left it.
 
-Every serious writer in Obsidian has the same loop today: draft in Obsidian, paste the
-paragraph into a readability site, read the verdict, come back, hand-edit. It is a context
-switch, it is a privacy leak — your journal, your manuscript, your client memo, pasted into
-someone else's web form — and the feedback arrives *after* the prose has already set.
+## Why people buy this
 
-Prose Lens moves the feedback into the sentence you are writing.
+Most writing tools for Obsidian fail in one of two ways:
 
-It also replaces a shelf of single-purpose plugins that each do one part of this and have
-not shipped an update in over a year, with one that does all of it and is maintained.
+1. They make you leave the editor.
+2. They blindly lint raw Markdown and flag garbage inside code, URLs, math, or links.
+
+Prose Lens fixes both.
+
+You keep drafting in Obsidian, and the plugin only analyzes actual prose. Code fences, inline code, math, frontmatter, URLs, wikilinks, headings, and table rows are masked before the rules run.
+
+That means:
+
+- `const was_deleted = obviously(x)` is not flagged as passive voice with an adverb.
+- A long URL is not treated like a 40-word sentence.
+- You get feedback on the sentence you are writing, not noise from the syntax around it.
+
+## What you get
+
+### Free
+
+- Inline marks for:
+  - adverbs
+  - passive voice
+  - hedges
+  - weasel words
+  - doubled words
+  - clichés
+  - long sentences
+- Live Flesch reading ease and grade in the status bar
+- Sentence-length heat
+- Rhythm map in the prose panel
+- No caps, no note limit, no session limit, no nag screen
+
+### Pro — $12 one-time
+
+Buy here: https://buymeacoffee.com/vaultspotlight/e/560203
+
+| Feature | Free | Pro |
+| --- | :---: | :---: |
+| Core style marks | ✓ | ✓ |
+| Reading grade in status bar | ✓ | ✓ |
+| Sentence-length heat | ✓ | ✓ |
+| Rhythm map | ✓ | ✓ |
+| De-slop marks |  | ✓ |
+| Echo detector |  | ✓ |
+| Revision delta |  | ✓ |
+| Focus mode |  | ✓ |
+
+Pro adds the higher-leverage editorial tools:
+
+- **De-slop marks** — catches mushy AI-era filler and overcooked phrasing like "it's worth noting," "a testament to," "delve," and the "not just X, it's Y" construction.
+- **Echo detector** — shows the words and phrases you keep leaning on, and where they cluster.
+- **Revision delta** — compares now versus when you opened the note, so editing moves a number instead of just a feeling.
+- **Focus mode** — dims everything except the sentence under the cursor.
+
+Important: de-slop is a highlighter, not an AI detector. It does not pretend to know who wrote a passage, and it will never spit out fake confidence percentages.
+
+Licenses are verified offline with an Ed25519 signature built into the plugin. No account, no server, no network request.
 
 ## What it marks
 
 | Mark | What it catches |
 | --- | --- |
 | **Adverbs** | `-ly` words. A stronger verb usually beats one. |
-| **Passive voice** | be-verb plus past participle. Conservative by design — see below. |
+| **Passive voice** | Be-verb plus past participle. Conservative by design. |
 | **Hedges** | *maybe*, *somewhat*, *I think* — the qualifiers that weaken a claim. |
 | **Weasel words** | *many*, *clearly*, *significantly* — claims with nobody behind them. |
 | **Doubled words** | the the. |
-| **Clichés** | the phrases a reader's eye slides straight over. |
-| **Long sentences** | past your threshold, with a second tier for the ones nobody finishes. |
+| **Clichés** | Phrases the reader's eye slides over. |
+| **Long sentences** | Sentences past your threshold, with a second tier for the real wall-of-text monsters. |
 
-Plus **Flesch reading ease and grade level** in the status bar, live, and a
-**sentence-length heat** layer that tints each sentence by how long it is.
+## Why it is different
 
-**Nothing fires inside code.** Code fences, inline code, math, frontmatter, URLs,
-wikilinks, headings, and table rows are masked before a single rule runs — so
-`const was_deleted = obviously(x)` is not "passive voice with an adverb", and a long URL is
-not a 40-word sentence. This is the part the older plugins in this space get wrong.
+The real differentiator is not the word list. It is the masking layer.
 
-## Pro — $12, one time
+Before any rule runs, Prose Lens removes non-prose structures from consideration while preserving editor offsets. That keeps the highlights anchored to the right text and avoids the usual Markdown-plugin stupidity.
 
-Three of these exist nowhere else in the community store.
-
-| | Free | Pro |
-| --- | :---: | :---: |
-| All style marks | ✓ | ✓ |
-| Reading grade in the status bar | ✓ | ✓ |
-| Sentence-length heat | ✓ | ✓ |
-| Rhythm map | ✓ | ✓ |
-| **De-slop marks** | | ✓ |
-| **Echo detector** | | ✓ |
-| **Revision delta** | | ✓ |
-| **Focus mode** | | ✓ |
-
-- **De-slop marks** — the phrasing tells of machine-generated prose: em-dash pile-ups,
-  *"it's worth noting"*, *"delve"*, *"a testament to"*, the *"not just X, it's Y"*
-  construction. **It is a highlighter, not a detector.** It will never put a percentage on
-  your writing or claim to know who wrote it. AI-detection scores are statistically
-  indefensible and the people they hurt are real writers.
-- **Echo detector** — the words and phrases you lean on, and where they cluster. *"However"
-  three times in four sentences.*
-- **Revision delta** — grade, passive count, and hedge count now, versus when you opened
-  the note. Editing finally moves a number.
-- **Focus mode** — dim everything except the sentence under the cursor.
-
-The free tier has **no caps** — no note limit, no session limit, no nag. It is a complete
-tool on its own, and it is meant to be.
-
-Licenses are verified **offline** with an Ed25519 signature built into the plugin. No
-account, no server, no network request, on any tier.
+If another plugin flags your code block, your URL, your table row, and your wikilink title as “bad writing,” that plugin is not being strict. It is being dumb.
 
 ## Honest limitations
 
-- **English only.** Flesch and the syllable model are fitted to English. Running them over
-  German or Portuguese produces confident nonsense, so the plugin says so rather than
-  quietly lying to you.
-- **Passive voice is a heuristic, not a parser.** There is no part-of-speech tagger in the
-  bundle — that is a deliberate trade for a small, instant, fully offline plugin. It is
-  tuned to stay quiet when unsure, so it misses some passives rather than crying wolf on
-  correct prose. If it marks something it should not, right-click the word and it will
-  never mark it again.
-- Very large notes are skipped rather than stalling your typing. The threshold is a
-  setting.
+- **English only.** Flesch and the syllable model are fitted to English. Running them over German or Portuguese would produce confident nonsense.
+- **Passive voice is heuristic, not grammatical parsing.** There is no full part-of-speech tagger in the bundle. The plugin is tuned to stay quiet when unsure, which means it misses some passives instead of crying wolf constantly.
+- **Very large notes are skipped rather than stalling the editor.** The threshold is configurable.
+
+If Prose Lens marks something you do not want marked, right-click the word and ignore it.
+
+## Who this is for
+
+Prose Lens is for people who actually draft inside Obsidian:
+
+- essay writers
+- bloggers
+- newsletter writers
+- students
+- fiction writers
+- people writing client memos, proposals, or documentation
+
+It is especially useful if you care about privacy and hate pasting drafts into web tools.
 
 ## Install
 
+### Community plugins
+
 Search for **Prose Lens** in Settings → Community plugins.
 
-**Manual:** copy `main.js`, `manifest.json`, and `styles.css` into
-`.obsidian/plugins/prose-lens/` in your vault, then enable it.
+### Manual install
+
+Download `main.js`, `manifest.json`, and `styles.css`, then copy them into:
+
+`.obsidian/plugins/prose-lens/`
+
+Enable the plugin in Obsidian after copying the files.
 
 ## Commands
 
@@ -100,19 +130,18 @@ Search for **Prose Lens** in Settings → Community plugins.
 - Open the prose panel
 - Toggle focus mode *(Pro)*
 
-No default hotkeys — bind whatever you like.
+No default hotkeys. Bind whatever you like.
 
 ## Development
 
 ```bash
 npm install
-npm run dev     # watch build
-npm test        # typecheck + the review bot's lint ruleset + the test suite
-npm run build   # production bundle
+npm run dev
+npm test
+npm run build
 ```
 
-The linguistic core (`src/core/*.mjs`) is pure JavaScript with no `obsidian` import and no
-dependencies, so the whole rule engine runs and is tested under plain Node with no mocking.
+The linguistic core in `src/core/*.mjs` is pure JavaScript with no `obsidian` import and no runtime dependency on the app, so the rule engine can be tested under plain Node without mocking the entire editor.
 
 ## License
 

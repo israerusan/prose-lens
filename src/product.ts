@@ -13,7 +13,7 @@ export const PRO_NAME = "Prose Lens Pro";
 export const PRO_PRICE_LABEL = "$12 one-time";
 
 /** Where "Unlock Pro" sends people. */
-export const PURCHASE_URL = "https://buymeacoffee.com/vaultspotlight";
+export const PURCHASE_URL = "https://buymeacoffee.com/vaultspotlight/e/560203";
 
 /** One-line pitch for the Pro tier, reused across upsell surfaces. */
 export const PRO_TAGLINE =
