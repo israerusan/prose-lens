@@ -6,6 +6,11 @@ Write in Obsidian. See weak prose while you draft. Keep your text private.
 
 Prose Lens highlights passive voice, adverbs, hedges, clichés, doubled words, long sentences, and more — directly in the note you are already writing. No browser tab. No copy-paste ritual. No account. No sending your draft to some random website.
 
+<!-- SCREENSHOT SLOT — drop a real Obsidian capture here to lift conversions.
+     ![Live inline marks in the editor with the reading-ease score in the status bar](docs/assets/hero.png)
+     Suggested shot: a paragraph mid-draft with passive/adverb/long-sentence marks lit up and the Flesch score visible in the status bar. Save as docs/assets/hero.png -->
+
+
 > Prose Lens never writes to your notes. It only highlights. Disable it and every character stays exactly where you left it.
 
 ## Why people buy this
@@ -44,7 +49,7 @@ That means:
 
 ### Pro — $12 one-time
 
-Buy here: https://buymeacoffee.com/vaultspotlight/e/560203
+Purchase: [Buy Me a Coffee — Prose Lens Pro](https://buymeacoffee.com/vaultspotlight/e/560203). License keys are verified **offline** (Ed25519) — no account, server, or subscription.
 
 | Feature | Free | Pro |
 | --- | :---: | :---: |
@@ -67,6 +72,12 @@ Pro adds the higher-leverage editorial tools:
 Important: de-slop is a highlighter, not an AI detector. It does not pretend to know who wrote a passage, and it will never spit out fake confidence percentages.
 
 Licenses are verified offline with an Ed25519 signature built into the plugin. No account, no server, no network request.
+
+### Activate Pro
+
+1. [Buy Prose Lens Pro](https://buymeacoffee.com/vaultspotlight/e/560203) — $12 one-time.
+2. Your license key is emailed to you **automatically, within seconds** — delivery is fully automated, no waiting.
+3. Paste it into the plugin's settings. Pro unlocks instantly, verified offline — no account, no sign-in, no telemetry.
 
 ## What it marks
 
