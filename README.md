@@ -2,7 +2,7 @@
 
 Turn mushy drafts into cleaner copy without leaving Obsidian.
 
-![Prose Lens diagnosing and tightening a weak Obsidian draft with in-editor marks, repeated-language detection, and live rewrite metrics](https://raw.githubusercontent.com/israerusan/prose-lens/main/docs/assets/prose-lens-hero-v4.gif)
+![Before and after rewrite comparison from a live Prose Lens editing pass in Obsidian, showing a messy draft becoming cleaner with fewer marks and better metrics](https://raw.githubusercontent.com/israerusan/prose-lens/main/docs/assets/prose-lens-hero-v5.png)
 
 **Offline** · **One-time payment** · **Unlimited future updates** · **No account**
 
@@ -12,8 +12,6 @@ writing*, then helps you cut the draft until the panel gets cleaner.
 
 - **Free:** the full in-editor style pass — core marks, reading grade, live counts, and the rhythm map.
 - **Pro — $12 one-time:** de-slop marks, echo detector, revision delta, and focus mode. No subscription, no account, **unlimited future updates**.
-
-![Prose Lens showing repeated wording in a live Obsidian draft while the Pro Echoes panel calls out overused terms like message and write](https://raw.githubusercontent.com/israerusan/prose-lens/main/docs/assets/prose-lens-pro-echo-v4.png)
 
 ![Prose Lens Pro capturing a live rewrite in Obsidian, with echo detection and revision delta showing the draft getting shorter and cleaner](https://raw.githubusercontent.com/israerusan/prose-lens/main/docs/assets/prose-lens-pro-delta-v2.gif)
 
@@ -109,8 +107,7 @@ notes are stored in the plugin's own settings, never in your Markdown.
 - **Free** — all seven style marks, the legend and counts, the reading grade, sentence-length
   heat, and the rhythm map. Uncapped.
 - **Pro — $12 one-time** — de-slop marks, the echo detector, revision delta, and focus mode.
-  One payment, no subscription, no expiry, no account. Yours forever, including future
-  updates.
+  No subscription, no expiry, no account. Yours forever, including unlimited future updates.
 
 ## Activate Pro
 
@@ -138,8 +135,8 @@ mean a sentence can be tightened, and leaves the decision to you. For grammar an
 LanguageTool and Harper are the right tools, and they sit happily alongside this.
 
 **The source is MIT — why pay?**
-You are paying for a signed key and for the work to continue, not for access to code you
-could read anyway.
+You are paying for the Pro features, an offline key, and for the plugin to keep improving.
+One purchase unlocks the paid tier and includes unlimited future updates.
 
 **Does de-slop detect AI writing?**
 No, and it never claims to. It highlights specific phrasing — "it's worth noting," "a
