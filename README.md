@@ -1,29 +1,17 @@
 # Prose Lens
 
-Live writing and editing feedback inside the Obsidian editor — a Hemingway-style pass on your
-draft without leaving the app, and without sending a byte anywhere.
+Write in Obsidian. Get real editorial feedback without leaving the note.
 
 ![Prose Lens focus mode dimming everything except the sentence under the cursor during a live rewrite pass in Obsidian](https://raw.githubusercontent.com/israerusan/prose-lens/main/docs/assets/prose-lens-pro-focus-v2.gif)
 
-Prose Lens marks passive voice, adverbs, hedges, weasel words, clichés, doubled words and
-long sentences directly in the note you are already writing. No browser tab. No copy-paste
-ritual. No account. No sending your draft to some random website.
+Prose Lens marks passive voice, adverbs, hedges, weasel words, clichés, doubled words, long
+sentences, and AI-era filler directly in the draft you are already writing. No browser tab.
+No copy-paste ritual. No account. No sending your draft to some random website.
 
-**Free** gives you the full in-editor style pass: all seven marks, the reading grade, live
-counts, and the rhythm map.
+- **Free:** the full in-editor style pass — all core marks, reading grade, live counts, and the rhythm map.
+- **Pro:** the rewrite tools — de-slop marks, echo detector, revision delta, and focus mode.
 
-**Pro** adds the editorial tools that make a rewrite move: de-slop marks for AI-era filler,
-the echo detector for repeated words, revision delta so edits change a number instead of a
-feeling, and focus mode for sentence-by-sentence passes.
-
-## What Pro actually buys you
-
-- **De-slop marks** point at filler and AI-era mush directly in the editor.
-- **Echo detector** shows which words you keep leaning on.
-- **Revision delta** proves the rewrite improved instead of merely feeling different.
-- **Focus mode** dims the rest of the draft so you can edit one sentence at a time.
-
-![Prose Lens showing Pro-only rewrite signals inside a live Obsidian draft, including de-slop marks and dense in-editor feedback](https://raw.githubusercontent.com/israerusan/prose-lens/main/docs/assets/prose-lens-pro-workflow-v2.png)
+![Prose Lens showing repeated wording in a live Obsidian draft while the Pro Echoes panel calls out overused terms like message and write](https://raw.githubusercontent.com/israerusan/prose-lens/main/docs/assets/prose-lens-pro-echo-v4.png)
 
 ![Prose Lens Pro capturing a live rewrite in Obsidian, with echo detection and revision delta showing the draft getting shorter and cleaner](https://raw.githubusercontent.com/israerusan/prose-lens/main/docs/assets/prose-lens-pro-delta-v2.gif)
 
