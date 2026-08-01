@@ -1,15 +1,15 @@
 # Prose Lens
 
-Write in Obsidian. Get real editorial feedback without leaving the note.
+Your draft is probably saying less than it thinks.
 
-![Prose Lens focus mode dimming everything except the sentence under the cursor during a live rewrite pass in Obsidian](https://raw.githubusercontent.com/israerusan/prose-lens/main/docs/assets/prose-lens-pro-focus-v2.gif)
+![Prose Lens diagnosing a messy Obsidian draft with in-editor marks, repeated-language detection, and live rewrite metrics in the side panel](https://raw.githubusercontent.com/israerusan/prose-lens/main/docs/assets/prose-lens-hero-v3.gif)
 
-Prose Lens marks passive voice, adverbs, hedges, weasel words, clichés, doubled words, long
-sentences, and AI-era filler directly in the draft you are already writing. No browser tab.
-No copy-paste ritual. No account. No sending your draft to some random website.
+Prose Lens is an editorial pass for Obsidian: it marks passive voice, hedges, weasel words,
+long sentences, repeated language, and AI-era filler *inside the note you are already
+writing*, then helps you cut the draft until the panel gets cleaner.
 
-- **Free:** the full in-editor style pass — all core marks, reading grade, live counts, and the rhythm map.
-- **Pro:** the rewrite tools — de-slop marks, echo detector, revision delta, and focus mode.
+- **Free:** the full in-editor style pass — core marks, reading grade, live counts, and the rhythm map.
+- **Pro — $12 one-time:** de-slop marks, echo detector, revision delta, and focus mode. No subscription, no account, **unlimited future updates**.
 
 ![Prose Lens showing repeated wording in a live Obsidian draft while the Pro Echoes panel calls out overused terms like message and write](https://raw.githubusercontent.com/israerusan/prose-lens/main/docs/assets/prose-lens-pro-echo-v4.png)
 
