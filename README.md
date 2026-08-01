@@ -1,10 +1,10 @@
 # Prose Lens
 
-Turn mushy drafts into cleaner copy without leaving Obsidian.
+Cut filler, repetition, and weak claims without leaving Obsidian.
 
-![Before and after rewrite comparison from a live Prose Lens editing pass in Obsidian, showing a bloated draft becoming shorter and cleaner with fewer marks and better metrics](https://raw.githubusercontent.com/israerusan/prose-lens/main/docs/assets/prose-lens-hero-v7.png)
+![Premium before and after rewrite comparison from a live Prose Lens editing pass in Obsidian, showing a bloated draft becoming shorter and cleaner with fewer marks and better metrics](https://raw.githubusercontent.com/israerusan/prose-lens/main/docs/assets/prose-lens-hero-v8.png)
 
-**Offline** · **One-time payment** · **Unlimited future updates** · **No account**
+**Offline analysis** · **Pay once for Pro** · **Unlimited future updates** · **No account**
 
 Prose Lens is an editorial pass for Obsidian. It marks passive voice, hedges, weasel words,
 long sentences, repeated language, and AI-era filler *inside the note you are already
