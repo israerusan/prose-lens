@@ -1,8 +1,10 @@
 # Prose Lens
 
-Your draft is probably saying less than it thinks.
+Turn mushy drafts into cleaner copy without leaving Obsidian.
 
-![Prose Lens diagnosing a messy Obsidian draft with in-editor marks, repeated-language detection, and live rewrite metrics in the side panel](https://raw.githubusercontent.com/israerusan/prose-lens/main/docs/assets/prose-lens-hero-v3.gif)
+![Prose Lens diagnosing and tightening a weak Obsidian draft with in-editor marks, repeated-language detection, and live rewrite metrics](https://raw.githubusercontent.com/israerusan/prose-lens/main/docs/assets/prose-lens-hero-v4.gif)
+
+**Offline** · **One-time payment** · **Unlimited future updates** · **No account**
 
 Prose Lens is an editorial pass for Obsidian: it marks passive voice, hedges, weasel words,
 long sentences, repeated language, and AI-era filler *inside the note you are already
