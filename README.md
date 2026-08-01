@@ -3,16 +3,23 @@
 Live writing and editing feedback inside the Obsidian editor — a Hemingway-style pass on your
 draft without leaving the app, and without sending a byte anywhere.
 
-![Prose Lens scrolling through a live Obsidian draft with writing marks in the editor and readability stats in the side panel](https://raw.githubusercontent.com/israerusan/prose-lens/main/docs/assets/prose-lens-hero.gif)
+![Prose Lens focus mode dimming everything except the sentence under the cursor during a live rewrite pass in Obsidian](https://raw.githubusercontent.com/israerusan/prose-lens/main/docs/assets/prose-lens-pro-focus-v2.gif)
 
 Prose Lens marks passive voice, adverbs, hedges, weasel words, clichés, doubled words and
 long sentences directly in the note you are already writing. No browser tab. No copy-paste
 ritual. No account. No sending your draft to some random website.
 
+**Free** gives you the full in-editor style pass: all seven marks, the reading grade, live
+counts, and the rhythm map.
+
+**Pro** adds the editorial tools that make a rewrite move: de-slop marks for AI-era filler,
+the echo detector for repeated words, revision delta so edits change a number instead of a
+feeling, and focus mode for sentence-by-sentence passes.
+
+![Prose Lens showing Pro-only rewrite signals inside a live Obsidian draft, including de-slop marks and dense in-editor feedback](https://raw.githubusercontent.com/israerusan/prose-lens/main/docs/assets/prose-lens-pro-workflow-v2.png)
+
 > Prose Lens never writes to your notes. It only highlights. Disable it and every character
 > stays exactly where you left it.
-
-![Prose Lens in Obsidian with live readability stats, per-rule counts, rhythm bars, and clickable writing marks inside the editor](https://raw.githubusercontent.com/israerusan/prose-lens/main/docs/assets/prose-lens-hero.png)
 
 ## What makes it different from a Markdown linter
 
