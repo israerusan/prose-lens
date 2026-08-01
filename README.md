@@ -16,7 +16,16 @@ counts, and the rhythm map.
 the echo detector for repeated words, revision delta so edits change a number instead of a
 feeling, and focus mode for sentence-by-sentence passes.
 
+## What Pro actually buys you
+
+- **De-slop marks** point at filler and AI-era mush directly in the editor.
+- **Echo detector** shows which words you keep leaning on.
+- **Revision delta** proves the rewrite improved instead of merely feeling different.
+- **Focus mode** dims the rest of the draft so you can edit one sentence at a time.
+
 ![Prose Lens showing Pro-only rewrite signals inside a live Obsidian draft, including de-slop marks and dense in-editor feedback](https://raw.githubusercontent.com/israerusan/prose-lens/main/docs/assets/prose-lens-pro-workflow-v2.png)
+
+![Prose Lens Pro capturing a live rewrite in Obsidian, with echo detection and revision delta showing the draft getting shorter and cleaner](https://raw.githubusercontent.com/israerusan/prose-lens/main/docs/assets/prose-lens-pro-delta-v2.gif)
 
 > Prose Lens never writes to your notes. It only highlights. Disable it and every character
 > stays exactly where you left it.
