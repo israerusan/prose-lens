@@ -3,7 +3,7 @@
 Live writing and editing feedback inside the Obsidian editor — a Hemingway-style pass on your
 draft without leaving the app, and without sending a byte anywhere.
 
-![Prose Lens marking passive voice, adverbs, hedges and a long sentence in an Obsidian note, with the reading grade in the status bar](https://raw.githubusercontent.com/israerusan/prose-lens/main/docs/assets/prose-lens-hero.gif)
+![Prose Lens scrolling through a live Obsidian draft with writing marks in the editor and readability stats in the side panel](https://raw.githubusercontent.com/israerusan/prose-lens/main/docs/assets/prose-lens-hero.gif)
 
 Prose Lens marks passive voice, adverbs, hedges, weasel words, clichés, doubled words and
 long sentences directly in the note you are already writing. No browser tab. No copy-paste
@@ -11,6 +11,8 @@ ritual. No account. No sending your draft to some random website.
 
 > Prose Lens never writes to your notes. It only highlights. Disable it and every character
 > stays exactly where you left it.
+
+![Prose Lens in Obsidian with live readability stats, per-rule counts, rhythm bars, and clickable writing marks inside the editor](https://raw.githubusercontent.com/israerusan/prose-lens/main/docs/assets/prose-lens-hero.png)
 
 ## What makes it different from a Markdown linter
 
