@@ -6,12 +6,14 @@ Cut filler, repetition, and weak claims without leaving Obsidian.
 
 **Offline analysis** · **Pay once for Pro** · **Unlimited future updates** · **No account**
 
-Prose Lens is an editorial pass for Obsidian. It marks passive voice, hedges, weasel words,
-long sentences, repeated language, and AI-era filler *inside the note you are already
-writing* — then helps you cut the draft until the metrics get cleaner.
+Prose Lens gives Obsidian a real editorial pass. It surfaces filler, repetition, hedges,
+weak claims, and long sentences *while you revise* — so you can tighten the draft before it
+leaves the note.
 
 - **Free:** the full in-editor style pass — core marks, reading grade, live counts, and the rhythm map.
-- **Pro — $12 one-time:** de-slop marks, echo detector, revision delta, and focus mode. No subscription, no account, **unlimited future updates**.
+- **Pro — $12 one-time:** the serious rewrite tools — de-slop marks, echo detector,
+  revision delta, and focus mode. No subscription, no account, **unlimited future updates**.
+- **Buy once, unlock fast:** [Buy Prose Lens Pro](https://buymeacoffee.com/vaultspotlight/e/560203) — your key is emailed automatically within seconds and activates offline.
 
 ![Prose Lens Pro capturing a live rewrite in Obsidian, with echo detection and revision delta showing the draft getting shorter and cleaner](https://raw.githubusercontent.com/israerusan/prose-lens/main/docs/assets/prose-lens-pro-delta-v2.gif)
 
@@ -106,8 +108,9 @@ notes are stored in the plugin's own settings, never in your Markdown.
 
 - **Free** — all seven style marks, the legend and counts, the reading grade, sentence-length
   heat, and the rhythm map. Uncapped.
-- **Pro — $12 one-time** — de-slop marks, the echo detector, revision delta, and focus mode.
-  No subscription, no expiry, no account. Yours forever, including unlimited future updates.
+- **Pro — $12 one-time** — the serious rewrite tools: de-slop marks, echo detector,
+  revision delta, and focus mode. No subscription, no expiry, no account. Yours forever,
+  including unlimited future updates.
 
 ## Activate Pro
 
@@ -188,12 +191,6 @@ Download `main.js`, `manifest.json` and `styles.css`, then copy them into
 - Toggle focus mode *(Pro)*
 
 No default hotkeys. Bind whatever you like.
-
-## Buy Pro
-
-Prose Lens Pro — $12 one-time, offline license, no account.
-[Buy Me a Coffee — Prose Lens Pro](https://buymeacoffee.com/vaultspotlight/e/560203). Your
-key is emailed automatically within seconds.
 
 ## Support
 
