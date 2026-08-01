@@ -2,13 +2,13 @@
 
 Turn mushy drafts into cleaner copy without leaving Obsidian.
 
-![Before and after rewrite comparison from a live Prose Lens editing pass in Obsidian, showing a messy draft becoming cleaner with fewer marks and better metrics](https://raw.githubusercontent.com/israerusan/prose-lens/main/docs/assets/prose-lens-hero-v5.png)
+![Before and after rewrite comparison from a live Prose Lens editing pass in Obsidian, showing a bloated draft becoming shorter and cleaner with fewer marks and better metrics](https://raw.githubusercontent.com/israerusan/prose-lens/main/docs/assets/prose-lens-hero-v7.png)
 
 **Offline** · **One-time payment** · **Unlimited future updates** · **No account**
 
-Prose Lens is an editorial pass for Obsidian: it marks passive voice, hedges, weasel words,
+Prose Lens is an editorial pass for Obsidian. It marks passive voice, hedges, weasel words,
 long sentences, repeated language, and AI-era filler *inside the note you are already
-writing*, then helps you cut the draft until the panel gets cleaner.
+writing* — then helps you cut the draft until the metrics get cleaner.
 
 - **Free:** the full in-editor style pass — core marks, reading grade, live counts, and the rhythm map.
 - **Pro — $12 one-time:** de-slop marks, echo detector, revision delta, and focus mode. No subscription, no account, **unlimited future updates**.
