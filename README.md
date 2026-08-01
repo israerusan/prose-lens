@@ -1,19 +1,19 @@
 # Prose Lens
 
-Cut filler, repetition, and weak claims without leaving Obsidian.
+Tighten bloated drafts into cleaner copy without leaving Obsidian.
 
 ![Premium before and after rewrite comparison from a live Prose Lens editing pass in Obsidian, showing a bloated draft becoming shorter and cleaner with fewer marks and better metrics](https://raw.githubusercontent.com/israerusan/prose-lens/main/docs/assets/prose-lens-hero-v8.png)
 
-**Offline analysis** · **Pay once for Pro** · **Unlimited future updates** · **No account**
+**Works offline** · **Pay once** · **Unlimited updates** · **No account**
 
 Prose Lens gives Obsidian a real editorial pass. It surfaces filler, repetition, hedges,
-weak claims, and long sentences *while you revise* — so you can tighten the draft before it
+weak claims, and long sentences *while you revise* — so the draft gets sharper before it
 leaves the note.
 
 - **Free:** the full in-editor style pass — core marks, reading grade, live counts, and the rhythm map.
 - **Pro — $12 one-time:** the serious rewrite tools — de-slop marks, echo detector,
   revision delta, and focus mode. No subscription, no account, **unlimited future updates**.
-- **Buy once, unlock fast:** [Buy Prose Lens Pro](https://buymeacoffee.com/vaultspotlight/e/560203) — your key is emailed automatically within seconds and activates offline.
+- **Buy once, unlock fast:** [Buy Prose Lens Pro](https://buymeacoffee.com/vaultspotlight/e/560203) — your key arrives automatically within seconds and activates offline.
 
 ![Prose Lens Pro capturing a live rewrite in Obsidian, with echo detection and revision delta showing the draft getting shorter and cleaner](https://raw.githubusercontent.com/israerusan/prose-lens/main/docs/assets/prose-lens-pro-delta-v2.gif)
 
@@ -115,8 +115,7 @@ notes are stored in the plugin's own settings, never in your Markdown.
 ## Activate Pro
 
 1. [Buy Prose Lens Pro](https://buymeacoffee.com/vaultspotlight/e/560203) — $12 one-time.
-2. Your license key is emailed to you **automatically, within seconds** — delivery is fully
-   automated, no waiting.
+2. Your license key arrives automatically within seconds — no waiting, no manual delivery.
 3. Paste it into the plugin's settings. Pro unlocks instantly, verified offline.
 
 Listed as **Optional payments** in the Obsidian community directory: a free core plus a paid
