@@ -53,9 +53,13 @@ npm run build     # produces main.js
 - `version`: valid semver, equals the release tag, has a `versions.json` entry.
 - `minAppVersion`, `author`, `authorUrl`: present and real. `isDesktopOnly`: accurate.
 
-> **The manifest description is not what the store searches.** The in-app browser reads the
-> entry in `obsidianmd/obsidian-releases/community-plugins.json`, which is edited by PR and
-> does not update from a release. See `docs/store-listing-pr.md`.
+> **The manifest description IS the store listing.** The in-app browser searches the entry in
+> `obsidianmd/obsidian-releases/community-plugins.json`, and a bot mirrors our manifest
+> description into it after a release (appending a staff-review suffix). So the description is
+> a search asset, not just repo metadata — treat a change to it as a deliberate act. The
+> `author` field is the exception: it comes from the Obsidian developer account, not the
+> manifest, and cannot be changed from here. Pull requests to that repo are disabled outright.
+> See `docs/store-listing.md`.
 
 ## 3. Source code
 
