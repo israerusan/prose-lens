@@ -1,6 +1,7 @@
 import type { App } from "obsidian";
 import { PRO_UPSELL } from "../../product";
 import { ProUpsellModal } from "./ProUpsellModal";
+import { isFeatureEnabled } from "../../core/featureGates.mjs";
 
 /** Anything carrying the resolved Pro entitlement and an app handle. */
 export interface ProHost {
@@ -22,7 +23,9 @@ export function requirePro(
 	feature: keyof typeof PRO_UPSELL,
 	action: () => void
 ): boolean {
-	if (host.isPro) {
+	// Ask the tier table, not the boolean directly, so moving a feature between tiers is a
+	// one-line edit in featureGates.mjs rather than a hunt through the UI.
+	if (isFeatureEnabled(feature, host.isPro)) {
 		action();
 		return true;
 	}

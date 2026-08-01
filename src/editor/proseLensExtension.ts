@@ -4,8 +4,20 @@ import type { Analysis } from "../core/types.d.mts";
 import { analyze } from "../core/ruleEngine.mjs";
 import type { ProseLensSettings } from "../settings";
 import { buildDecorations } from "./decorations";
-import { analysisField, decorationField, setAnalysis, setDecorations } from "./state";
+import { analysisDriftField, analysisField, decorationField, setAnalysis, setDecorations } from "./state";
 import { focusPlugin } from "./focus";
+
+/**
+ * Why a note has no analysis.
+ *
+ * Publishing a bare `null` was indistinguishable from "this plugin is broken": the marks
+ * vanished, the status bar emptied, and the panel said "Open a note with some prose in it."
+ * — while the user was looking at a 320,000-character note full of prose. The plugin was
+ * protecting them and had no way to say so.
+ */
+export type SkipReason =
+	| { reason: "muted" }
+	| { reason: "too-large"; chars: number; limit: number };
 
 /** What the editor extension needs from the plugin. Kept narrow so it stays testable. */
 export interface EditorHost {
@@ -13,13 +25,23 @@ export interface EditorHost {
 	/** Bumped on every settings save. Changing it re-runs the analysis in every editor. */
 	readonly settingsEpoch: number;
 	/** Called after every analysis so the status bar and the panel can follow along. */
-	onAnalysis(view: EditorView, analysis: Analysis | null): void;
+	onAnalysis(view: EditorView, analysis: Analysis | null, skipped: SkipReason | null): void;
 	/** True when marks are muted for the note in this editor. */
 	isMuted(view: EditorView): boolean;
 }
 
 /** Idle time after the last keystroke before we re-analyze. */
 const DEBOUNCE_MS = 250;
+
+/**
+ * Delay before the FIRST analysis in a newly constructed editor.
+ *
+ * Constructing an editor for a large note used to analyze it at zero delay, which blocked
+ * the main thread at the exact moment the user clicked a tab — the most latency-sensitive
+ * moment in the app, and the one where the stall gets attributed to whatever was just
+ * clicked. Letting the editor paint first costs nothing anyone can perceive.
+ */
+const FIRST_RUN_MS = 400;
 
 export function proseLensExtension(host: EditorHost): Extension {
 	const runner = ViewPlugin.fromClass(
@@ -33,7 +55,7 @@ export function proseLensExtension(host: EditorHost): Extension {
 			constructor(private view: EditorView) {
 				this.epoch = host.settingsEpoch;
 				this.win = view.dom.ownerDocument.defaultView ?? window;
-				this.schedule(0);
+				this.schedule(FIRST_RUN_MS);
 			}
 
 			update(update: ViewUpdate): void {
@@ -84,14 +106,20 @@ export function proseLensExtension(host: EditorHost): Extension {
 				// a string only to discover it is over the cap would pay the whole allocation on
 				// every debounce tick, which is exactly what the cap exists to avoid.
 				const muted = host.isMuted(this.view);
-				const tooLarge = this.view.state.doc.length > settings.maxNoteChars;
+				const length = this.view.state.doc.length;
+				const tooLarge = length > settings.maxNoteChars;
 				if (muted || tooLarge) {
 					// Forget the last text. Otherwise, restoring the document to the text that was
 					// analyzed before it was muted or overflowed would compare equal below, the run
 					// would be skipped as a no-op, and the marks — already cleared to nothing —
 					// would never come back.
 					this.lastText = null;
-					this.publish(null);
+					this.publish(
+						null,
+						muted
+							? { reason: "muted" }
+							: { reason: "too-large", chars: length, limit: settings.maxNoteChars }
+					);
 					return;
 				}
 
@@ -112,14 +140,14 @@ export function proseLensExtension(host: EditorHost): Extension {
 				this.publish(analysis);
 			}
 
-			private publish(analysis: Analysis | null): void {
+			private publish(analysis: Analysis | null, skipped: SkipReason | null = null): void {
 				const decorations = analysis
 					? buildDecorations(analysis, host.settings)
 					: Decoration.none;
 				this.view.dispatch({
 					effects: [setAnalysis.of(analysis), setDecorations.of(decorations)],
 				});
-				host.onAnalysis(this.view, analysis);
+				host.onAnalysis(this.view, analysis, skipped);
 			}
 
 			/** Force a re-run — used when settings or the Pro entitlement change. */
@@ -130,5 +158,5 @@ export function proseLensExtension(host: EditorHost): Extension {
 		}
 	);
 
-	return [decorationField, analysisField, runner, focusPlugin(host)];
+	return [decorationField, analysisField, analysisDriftField, runner, focusPlugin(host)];
 }

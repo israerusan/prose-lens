@@ -10,3 +10,14 @@ scripts/.license-private.key
 # Round-table review transcripts — local tooling artifact, never part of the source.
 .roundtable/
 *.diff
+
+# Local-only rigs for marketing capture and perf probing. `_hero/hero.html` renders the
+# real engine into a standalone page for screenshots; it is not the plugin and must never
+# be mistaken for it in the repo.
+_hero/
+_probe.mjs
+_demo_draft.md
+
+# The Obsidian community store index. It is a 1.6MB working artifact that was pulled down
+# to check listings — nothing in the plugin reads it, and it inflates every clone.
+community-plugins.json

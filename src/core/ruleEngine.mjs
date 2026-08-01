@@ -317,30 +317,40 @@ function resolveOverlaps(marks) {
 	const layered = marks.filter((mark) => mark.rule !== "longSentence");
 	if (layered.length < 2) return marks;
 
-	// Longest first, so a container is always considered before what it contains.
+	// DOCUMENT order, longest-first on ties — not longest-first overall.
+	//
+	// The previous version sorted by length and then asked, for each mark, whether ANY mark
+	// already kept contained it: `kept.some(...)`, a linear scan inside a loop over every
+	// mark. Marks in prose almost never nest, so `kept` grows to n and the common case IS
+	// the worst case — n squared over a four-clause predicate. On a 300,000-character draft
+	// that was ~56ms of a ~211ms analysis, and it scales with MARK DENSITY, so it punished
+	// exactly the adverb-heavy, hedge-heavy first drafts this plugin exists to fix.
+	//
+	// Sorting by `from` instead makes the whole question one number. Every mark seen so far
+	// starts at or before the current one, so "is this mark contained?" reduces to "did
+	// anything already seen reach at least as far right?" — a running maximum, checked in
+	// constant time.
+	//
+	// It is safe to fold DROPPED marks into that maximum: containment is transitive, so if
+	// the mark that reaches furthest was itself swallowed, whatever swallowed it also
+	// contains the current mark. The outermost container is never dropped, so the answer is
+	// the same one the pairwise scan gave.
 	const ordered = [...layered].sort(
 		(a, b) =>
-			b.to - b.from - (a.to - a.from) ||
 			a.from - b.from ||
+			b.to - a.to ||
 			(RULE_RANK[b.rule] ?? 0) - (RULE_RANK[a.rule] ?? 0)
 	);
 
-	const kept = [];
 	const dropped = new Set();
+	/** The furthest right any non-`doubled` mark has reached. */
+	let furthest = -1;
 	for (const mark of ordered) {
-		if (mark.rule === "doubled") {
-			kept.push(mark);
-			continue;
-		}
-		const swallowed = kept.some(
-			(other) =>
-				other.rule !== "doubled" &&
-				other.from <= mark.from &&
-				other.to >= mark.to &&
-				!(other.from === mark.from && other.to === mark.to && other === mark)
-		);
-		if (swallowed) dropped.add(mark);
-		else kept.push(mark);
+		// A doubled word is a TYPO, not a style opinion: it is never suppressed, and it never
+		// suppresses anything either, so it stays out of the running maximum entirely.
+		if (mark.rule === "doubled") continue;
+		if (mark.to <= furthest) dropped.add(mark);
+		else furthest = mark.to;
 	}
 
 	return marks.filter((mark) => !dropped.has(mark));

@@ -13,28 +13,43 @@
 	text-decoration-skip-ink: none;
 }
 
+/* Each rule carries a distinct underline SHAPE as well as a distinct hue.
+ *
+ * Hue alone was the only channel, and it fails twice over. Adverb-yellow against
+ * weasel-orange, and deslop-green against doubled-red, are the two classic confusion pairs
+ * for colour-blind readers. And in forced-colours mode every mark collapses to the same
+ * system Highlight (see the media query at the bottom of this file), which left a native
+ * `title` attribute as the only way to tell seven rules apart. Shape survives both, and it
+ * is what makes the panel's legend teachable rather than decorative. */
 .pl-adverb {
 	text-decoration-color: var(--color-yellow);
+	text-decoration-style: solid;
 	background-color: color-mix(in srgb, var(--color-yellow) 12%, transparent);
 }
 
 .pl-passive {
 	text-decoration-color: var(--color-purple);
+	text-decoration-style: double;
+	text-decoration-thickness: 1px;
 	background-color: color-mix(in srgb, var(--color-purple) 12%, transparent);
 }
 
 .pl-hedge {
 	text-decoration-color: var(--color-cyan);
+	text-decoration-style: dotted;
 	background-color: color-mix(in srgb, var(--color-cyan) 12%, transparent);
 }
 
 .pl-weasel {
 	text-decoration-color: var(--color-orange);
+	text-decoration-style: dashed;
 	background-color: color-mix(in srgb, var(--color-orange) 12%, transparent);
 }
 
 .pl-cliche {
 	text-decoration-color: var(--color-pink);
+	text-decoration-style: dashed;
+	text-decoration-thickness: 3px;
 	background-color: color-mix(in srgb, var(--color-pink) 12%, transparent);
 }
 
@@ -162,6 +177,59 @@
 .pl-stat-label {
 	font-size: var(--font-ui-smaller);
 	color: var(--text-muted);
+}
+
+/* A quiet inline explainer inside a locked card. A button, not a link, because it opens a
+ * modal rather than navigating anywhere. */
+.pl-locked-link {
+	background: none;
+	border: none;
+	box-shadow: none;
+	padding: 0;
+	margin: 4px 0 0;
+	color: var(--text-accent);
+	font-size: var(--font-ui-smaller);
+	cursor: var(--cursor-link);
+	text-decoration: underline;
+}
+
+/* Legend: what each colour means, how many of each are in this note, and a way to walk
+ * them. The sample is the rule's own name painted with the rule's own mark class, so there
+ * is no second palette here that could drift out of step with the editor. */
+.pl-legend {
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+}
+
+.pl-legend-row {
+	display: flex;
+	justify-content: space-between;
+	align-items: baseline;
+	gap: 8px;
+	padding: 3px 6px;
+	border-radius: var(--radius-s);
+	font-size: var(--font-ui-small);
+}
+
+.pl-legend-row[data-pl-rule] {
+	cursor: var(--cursor-link);
+}
+
+.pl-legend-row[data-pl-rule]:hover {
+	background-color: var(--background-modifier-hover);
+}
+
+/* A rule that found nothing still shows, greyed: a zero is proof the rule ran, and an
+ * absent row would read as a missing feature. */
+.pl-legend-row.is-empty {
+	opacity: 0.45;
+}
+
+.pl-legend-count {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	font-variant-numeric: tabular-nums;
 }
 
 /* Rhythm map: one bar per sentence, width proportional to length. A flat band of equal
@@ -354,6 +422,9 @@
 
 /* High-contrast mode: tints vanish, so lean entirely on the underline. */
 @media (forced-colors: active) {
+	/* Every tint and every hue is gone here, by the OS's choice. What survives is the
+	 * underline SHAPE each rule sets above — which is the whole reason the rules carry one.
+	 * Without it, all seven marks render identically and the legend becomes a lie. */
 	.pl-mark {
 		background-color: transparent;
 		text-decoration-color: Highlight;

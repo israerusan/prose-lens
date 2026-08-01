@@ -1,7 +1,8 @@
 import { type Extension } from "@codemirror/state";
 import { Decoration, EditorView, ViewPlugin, type DecorationSet, type ViewUpdate } from "@codemirror/view";
 import type { EditorHost } from "./proseLensExtension";
-import { analysisField } from "./state";
+import { analysisDriftField, analysisField } from "./state";
+import { isFeatureEnabled } from "../core/featureGates.mjs";
 
 const dim = Decoration.mark({ class: "pl-dim" });
 
@@ -31,20 +32,38 @@ export function focusPlugin(host: EditorHost): Extension {
 
 			private build(view: EditorView): DecorationSet {
 				const settings = host.settings;
-				if (!settings.focusMode || !settings.isPro) return Decoration.none;
+				if (!settings.focusMode || !isFeatureEnabled("focus", settings.isPro)) {
+					return Decoration.none;
+				}
 
 				const analysis = view.state.field(analysisField, false);
 				if (!analysis || analysis.sentences.length === 0) return Decoration.none;
 
 				const cursor = view.state.selection.main.head;
-				const current = analysis.sentences.find(
-					(sentence) => cursor >= sentence.from && cursor <= sentence.to
-				);
-				if (!current) return Decoration.none;
+
+				// The analysis can be a whole debounce window behind — longer, for a typist who
+				// never pauses — so its offsets are mapped through everything typed since.
+				// Without this the spans lag the cursor and the WRONG sentence stays lit.
+				// Mapping preserves document order, so the scan can stop at the first sentence
+				// that starts after the cursor, and only the matched sentence is ever mapped.
+				const drift = view.state.field(analysisDriftField, false);
+				let start = -1;
+				let end = -1;
+				for (const sentence of analysis.sentences) {
+					const mappedFrom = drift ? drift.mapPos(sentence.from, -1) : sentence.from;
+					if (cursor < mappedFrom) break;
+					const mappedTo = drift ? drift.mapPos(sentence.to, 1) : sentence.to;
+					if (cursor <= mappedTo) {
+						start = mappedFrom;
+						end = mappedTo;
+						break;
+					}
+				}
+				if (start < 0) return Decoration.none;
 
 				const docLength = view.state.doc.length;
-				const from = Math.min(current.from, docLength);
-				const to = Math.min(current.to, docLength);
+				const from = Math.min(start, docLength);
+				const to = Math.min(end, docLength);
 				const ranges = [];
 				if (from > 0) ranges.push(dim.range(0, from));
 				if (to < docLength) ranges.push(dim.range(to, docLength));

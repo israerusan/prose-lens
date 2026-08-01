@@ -3,8 +3,13 @@ import type { Analysis, Mark } from "../core/types.d.mts";
 import { rhythm } from "../core/rhythm.mjs";
 import type { ProseLensSettings } from "../settings";
 
-/** One CSS class per rule, so a theme can restyle any single mark type. */
-const RULE_CLASS: Record<string, string> = {
+/**
+ * One CSS class per rule, so a theme can restyle any single mark type.
+ *
+ * Exported because the panel's legend paints its sample with the very same class. A legend
+ * that derives its own colours is a legend that can quietly stop matching the editor.
+ */
+export const RULE_CLASS: Record<string, string> = {
 	adverb: "pl-mark pl-adverb",
 	passive: "pl-mark pl-passive",
 	hedge: "pl-mark pl-hedge",

@@ -1,6 +1,6 @@
 import { PluginSettingTab, Setting } from "obsidian";
 import type ProseLensPlugin from "../main";
-import { RULE_LABELS } from "../settings";
+import { BOUNDS, RULE_LABELS } from "../settings";
 import { createExternalLink } from "./links";
 import { PRO_PRICE_LABEL, PRO_UNLOCK_SUMMARY, PRODUCT_NAME, PURCHASE_URL } from "../product";
 
@@ -156,7 +156,7 @@ export class ProseLensSettingTab extends PluginSettingTab {
 			.setDesc("Words before a sentence is marked long.")
 			.addSlider((slider) =>
 				slider
-					.setLimits(15, 45, 1)
+					.setLimits(BOUNDS.longSentenceWords.min, BOUNDS.longSentenceWords.max, 1)
 					.setValue(this.plugin.settings.longSentenceWords)
 					.setDynamicTooltip()
 					.onChange((value) => {
@@ -174,7 +174,7 @@ export class ProseLensSettingTab extends PluginSettingTab {
 			.setDesc("Words before a sentence is marked as hard to read in one pass.")
 			.addSlider((slider) =>
 				slider
-					.setLimits(25, 70, 1)
+					.setLimits(BOUNDS.veryLongSentenceWords.min, BOUNDS.veryLongSentenceWords.max, 1)
 					.setValue(this.plugin.settings.veryLongSentenceWords)
 					.setDynamicTooltip()
 					.onChange((value) => {
@@ -211,10 +211,24 @@ export class ProseLensSettingTab extends PluginSettingTab {
 
 		new Setting(this.containerEl)
 			.setName("Echo detector and revision delta")
-			.setDesc("Both live in the side panel. Open it from the command palette.")
+			.setDesc("Both live in the side panel, next to the rhythm map.")
 			.addButton((button) =>
 				button.setButtonText("Open panel").onClick(() => {
 					void this.plugin.activatePanel();
+				})
+			);
+
+		// The free tier promises no caps, no limits and no nag screen. This is what makes that
+		// promise something the user can enforce rather than something we merely assert.
+		new Setting(this.containerEl)
+			.setName("Hide Pro sections")
+			.setDesc(
+				"Remove the filler, echo and revision-delta sections from the panel. The marks, the legend, the grade and the rhythm map are unaffected."
+			)
+			.addToggle((toggle) =>
+				toggle.setValue(this.plugin.settings.hideProSections).onChange(async (value) => {
+					this.plugin.settings.hideProSections = value;
+					await this.plugin.saveSettings();
 				})
 			);
 	}
@@ -246,10 +260,20 @@ export class ProseLensSettingTab extends PluginSettingTab {
 
 		new Setting(this.containerEl)
 			.setName("Skip notes larger than")
-			.setDesc("Characters. Above this size, analysis is skipped so a huge note cannot stall typing.")
+			.setDesc(
+				"Characters. Above this size, analysis is skipped so a huge note cannot stall typing. The panel says so when it happens, rather than going quiet."
+			)
 			.addSlider((slider) =>
 				slider
-					.setLimits(50000, 1000000, 50000)
+					// The ceiling used to be a million, which measures at roughly 2.4 seconds of
+					// blocked main thread per typing pause. Nothing above BOUNDS.maxNoteChars.max
+					// can be analyzed between keystrokes without the editor visibly freezing, so
+					// it is not offered.
+					.setLimits(
+						BOUNDS.maxNoteChars.min,
+						BOUNDS.maxNoteChars.max,
+						BOUNDS.maxNoteChars.step
+					)
 					.setValue(this.plugin.settings.maxNoteChars)
 					.setDynamicTooltip()
 					.onChange((value) => {

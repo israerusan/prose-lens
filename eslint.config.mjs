@@ -18,6 +18,11 @@ export default tseslint.config(
 			"eslint.config.mjs",
 			"src/**/*.mjs",
 			"src/**/*.d.mts",
+			// Local-only rigs, never shipped and never committed: the marketing-capture page
+			// and the perf probe. They are not plugin source, and linting them as if they were
+			// fails the gate on rules that do not apply to them.
+			"_hero/**",
+			"_probe.mjs",
 		],
 	},
 	...obsidianmd.configs.recommended,

@@ -1,4 +1,4 @@
-import { StateEffect, StateField } from "@codemirror/state";
+import { ChangeSet, StateEffect, StateField } from "@codemirror/state";
 import { Decoration, EditorView, type DecorationSet } from "@codemirror/view";
 import type { Analysis } from "../core/types.d.mts";
 
@@ -30,9 +30,13 @@ export const decorationField = StateField.define<DecorationSet>({
 });
 
 /**
- * The last analysis for this document. Offsets go stale between runs exactly as the
- * decorations do, but nothing reads them positionally except focus mode — which
- * recomputes on every selection change anyway — so they are deliberately not mapped.
+ * The last analysis for this document. Its offsets are in the coordinates of the document
+ * as it stood when the analysis ran, and they are deliberately NOT rewritten here — the
+ * analysis is one immutable object shared with the plugin and the side panel, and rewriting
+ * a copy of it per keystroke would desynchronise `sentences` from `masked`, which is sliced
+ * at the same offsets.
+ *
+ * Read positions out of it through {@link analysisDriftField} instead.
  */
 export const analysisField = StateField.define<Analysis | null>({
 	create() {
@@ -44,5 +48,33 @@ export const analysisField = StateField.define<Analysis | null>({
 			if (effect.is(setAnalysis)) next = effect.value;
 		}
 		return next;
+	},
+});
+
+/**
+ * Every document change since the current analysis was published.
+ *
+ * Analysis is debounced by 250ms, and a steady typist can go much longer than that between
+ * runs, so any consumer reading an offset out of `analysisField` is reading a stale
+ * coordinate. Focus mode did exactly that: after a few dozen keystrokes the sentence spans
+ * lagged the cursor, so it dimmed the sentence being written and lit a neighbouring one —
+ * or matched nothing at all and un-dimmed the whole document.
+ *
+ * Composing one ChangeSet is O(1) per transaction and costs nothing when no one reads it,
+ * which is the common case: focus mode is Pro and off by default. Consumers map the two
+ * offsets they actually need, rather than every offset in the analysis being rewritten.
+ */
+export const analysisDriftField = StateField.define<ChangeSet>({
+	create(state) {
+		return ChangeSet.empty(state.doc.length);
+	},
+	update(drift, tr) {
+		// A fresh analysis is by definition in the new document's coordinates, so the drift
+		// resets to nothing. Checked first: a transaction can both change the doc and carry
+		// the analysis that already accounts for the change.
+		for (const effect of tr.effects) {
+			if (effect.is(setAnalysis)) return ChangeSet.empty(tr.newDoc.length);
+		}
+		return tr.docChanged ? drift.compose(tr.changes) : drift;
 	},
 });
