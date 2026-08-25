@@ -22,6 +22,7 @@ export class ProseLensSettingTab extends PluginSettingTab {
 		this.renderPro();
 		this.renderIgnored();
 		this.renderPerformance();
+		this.renderFeedback();
 	}
 
 	// --- gating primitives -----------------------------------------------------
@@ -282,6 +283,24 @@ export class ProseLensSettingTab extends PluginSettingTab {
 						this.plugin.settings.maxNoteChars = value;
 						this.plugin.queueSave();
 					})
+			);
+	}
+
+	private renderFeedback(): void {
+		new Setting(this.containerEl).setName("Feedback").setHeading();
+
+		new Setting(this.containerEl)
+			.setName("Bugs and feature requests")
+			.setDesc("Issues and ideas are tracked on GitHub. Opens in your browser.")
+			.addButton((button) =>
+				button.setButtonText("Report a bug").onClick(() => {
+					window.open("https://github.com/israerusan/prose-lens/issues/new?labels=bug");
+				})
+			)
+			.addButton((button) =>
+				button.setButtonText("Request a feature").onClick(() => {
+					window.open("https://github.com/israerusan/prose-lens/issues/new?labels=enhancement");
+				})
 			);
 	}
 }

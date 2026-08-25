@@ -196,13 +196,49 @@ Download `main.js`, `manifest.json` and `styles.css`, then copy them into
 
 No default hotkeys. Bind whatever you like.
 
-## Support
+## Feedback and support
 
-Bugs and feature requests:
-[github.com/israerusan/prose-lens/issues](https://github.com/israerusan/prose-lens/issues).
+Bug reports, feature requests, and questions all go to the GitHub issue tracker. It is
+the only place I track them, so an issue will always get further than a review comment.
+
+- **[Report a bug](https://github.com/israerusan/prose-lens/issues/new?labels=bug)** — please include your Obsidian version, your operating system, and the steps that reproduce it.
+- **[Request a feature](https://github.com/israerusan/prose-lens/issues/new?labels=enhancement)** — describe the workflow you are trying to make faster; that is more useful than a proposed solution.
+- **[Browse open issues](https://github.com/israerusan/prose-lens/issues)** — worth a look first, in case it is already tracked.
 
 Not the right fit for your workflow? Email within 14 days of purchase for a refund, no
 argument.
+
+## More plugins by the same author
+
+Small, local-first Obsidian plugins that each do one job and keep your data in your vault.
+All of them are in the community directory — search the name under
+**Settings → Community plugins**.
+
+**Search and views**
+
+- [Vault Spotlight](https://github.com/israerusan/obsidian-vault-spotlight) — keyboard-first command center — fuzzy search, saved workflows, and result actions.
+- [Bases Power Pack](https://github.com/israerusan/bases-power-pack) — kanban, calendar, Gantt, and outline views over your notes or a `.base` file.
+
+**Vault health**
+
+- [Vault Triage](https://github.com/israerusan/vault-triage) — find stale, orphaned, unfinished, and metadata-broken notes, then work through them.
+- [Attachment Audit](https://github.com/israerusan/attachment-audit) — find orphaned, duplicate, oversized, and misplaced attachments, then clean them up safely.
+- [Patina](https://github.com/israerusan/patina) — score every note's staleness from edits, opens, and inbound links.
+- [Vault Router](https://github.com/israerusan/vault-router) — move new notes out of Inbox with fast local routing rules.
+- [FlowKit Health Dashboard](https://github.com/israerusan/flowkit-health-dashboard) — find which add-on is breaking your vault, and score every one installed.
+
+**Writing and research**
+
+- [Prior Art](https://github.com/israerusan/prior-art) — show similar existing notes while you write, and merge duplicates without losing links.
+- [Standing Questions](https://github.com/israerusan/standing-questions) — track the open questions in your vault and surface new notes that may answer them.
+- [Unwritten](https://github.com/israerusan/unwritten) — report the notes you never wrote — unexplained link pairs, stub hubs, unreasoned decisions.
+- [Effort Index](https://github.com/israerusan/effort-index) — measure the editing time behind every note and resurface the expensive ones.
+
+**Time and billing**
+
+- [Task Calendar Bridge](https://github.com/israerusan/obsidian-task-calendar-bridge) — export dated Markdown tasks to standards-based ICS calendar files.
+- [Invoice Forge](https://github.com/israerusan/obsidian-invoice-forge) — turn `#billable` notes into numbered invoices, so nothing is missed or billed twice.
+- [Time Tracker and Invoicing](https://github.com/israerusan/time-tracker-invoicing) — track billable time against notes and projects, then invoice by client.
 
 ## Development
 
