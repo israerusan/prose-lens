@@ -118,6 +118,11 @@ notes are stored in the plugin's own settings, never in your Markdown.
 2. Your license key arrives automatically within seconds — no waiting, no manual delivery.
 3. Paste it into the plugin's settings. Pro unlocks instantly, verified offline.
 
+**One key covers all your devices.** The license is not tied to a machine and has no
+activation limit — buy once and use the same key everywhere, forever. The key is stored in
+the plugin's per-vault settings, so a second device or a second vault will show Free until
+you paste that same key in again. You never need to buy Prose Lens Pro more than once.
+
 Listed as **Optional payments** in the Obsidian community directory: a free core plus a paid
 Pro unlock.
 

@@ -81,7 +81,9 @@ export class ProseLensSettingTab extends PluginSettingTab {
 
 		new Setting(this.containerEl)
 			.setName("License key")
-			.setDesc("Verified offline — no account, no server, no network request.")
+			.setDesc(
+				"Verified offline — no account, no server, no network request. One key works on all your devices and vaults; paste the same key into each one."
+			)
 			.addText((text) =>
 				text
 					.setPlaceholder("Paste your license key")
