@@ -3,8 +3,8 @@
   "name": "Prose Lens",
   "version": "1.1.0",
   "minAppVersion": "1.4.0",
-  "description": "Writing feedback while you draft: marks passive voice, adverbs, hedges, weasel words, cliches, and long sentences, plus a live Flesch reading grade. Skips code and links. English, offline.",
-  "author": "Israel Avila (saiken)",
+  "description": "Grammarly-style editing marks while you draft: passive voice, hedges, weasel words, cliches and long sentences, plus a live reading grade. English, offline.",
+  "author": "Israel Avila",
   "authorUrl": "https://github.com/israerusan",
   "fundingUrl": "https://buymeacoffee.com/vaultspotlight/e/560203",
   "isDesktopOnly": false
