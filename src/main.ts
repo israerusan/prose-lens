@@ -6,7 +6,7 @@ import { resolveLicenseTransition } from "./core/licenseTransition.mjs";
 import { snapshot } from "./core/delta.mjs";
 import { LicenseManager } from "./license/LicenseManager";
 import { PRODUCT_NAME } from "./product";
-import { DEFAULT_SETTINGS, normalizeSettings, type ProseLensSettings } from "./settings";
+import { DEFAULT_SETTINGS, normalizeSettings, renamePaths, type ProseLensSettings } from "./settings";
 import { ProseLensSettingTab } from "./ui/SettingsTab";
 import { proseLensExtension, type EditorHost } from "./editor/proseLensExtension";
 import { ProsePanelView, VIEW_TYPE_PROSE_PANEL } from "./ui/ProsePanelView";
@@ -104,6 +104,23 @@ export default class ProseLensPlugin extends Plugin implements EditorHost {
 		// already holds the file, so a note being reopened is always still "open" and its stale
 		// baseline would survive the very eviction meant to clear it.
 		this.registerEvent(this.app.workspace.on("layout-change", () => this.evictClosedNotes()));
+
+		// A muted note must stay muted when it is renamed or moved, and "since you opened this
+		// note" must survive a rename too — both are keyed by path.
+		this.registerEvent(
+			this.app.vault.on("rename", (file, oldPath) => {
+				const baseline = this.baselines.get(oldPath);
+				if (baseline) {
+					this.baselines.delete(oldPath);
+					this.baselines.set(file.path, baseline);
+				}
+				const muted = renamePaths(this.settings.mutedPaths, oldPath, file.path);
+				if (muted) {
+					this.settings.mutedPaths = muted;
+					void this.saveSettings();
+				}
+			})
+		);
 
 		this.addSettingTab(new ProseLensSettingTab(this));
 

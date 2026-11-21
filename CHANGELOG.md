@@ -4,6 +4,27 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2026-11-21
+
+A fix-only release: making every documented behaviour actually hold.
+
+### Fixed
+- Right-click "Stop marking" now works on phrase marks (hedges like "I think", clichés,
+  multi-word de-slop phrases) and curly-apostrophe words. It used to appear only when the
+  mark was a single word identical to the word under the cursor.
+- Muting a note survives renaming or moving it (including a renamed parent folder); the
+  revision-delta baseline carries over too.
+- Indented lines that are prose under CommonMark — a wrapped paragraph continuation, a
+  continuation paragraph inside a list item — are no longer masked as code, so marks fire
+  on them. Real indented code is still skipped.
+- Callout markers (`> [!note]`) are treated as syntax, so their "!" no longer splits off a
+  wordless sentence that skewed the grade and rhythm map.
+- Wordless fragments ("2024.", a stray "!") are no longer counted as sentences.
+- Next/previous mark commands are unavailable while style marks are switched off, instead
+  of jumping to highlights that aren't drawn.
+- A quiet (modal) passive keeps the passive's double underline instead of borrowing the
+  hedge's dotted one, so every rule keeps a distinct shape.
+
 ## [1.1.0] - 2026-07-31
 
 The release that makes the plugin explain itself. Installing it used to do nothing
@@ -134,6 +155,7 @@ First release.
   a missed passive is better than a false accusation on correct prose. Right-click any
   word to stop marking it.
 
+[1.1.1]: https://github.com/israerusan/prose-lens/releases/tag/1.1.1
 [1.1.0]: https://github.com/israerusan/prose-lens/releases/tag/1.1.0
 [1.0.2]: https://github.com/israerusan/prose-lens/releases/tag/1.0.2
 [1.0.1]: https://github.com/israerusan/prose-lens/releases/tag/1.0.1

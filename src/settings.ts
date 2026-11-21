@@ -199,3 +199,26 @@ export const RULE_LABELS: readonly RuleLabel[] = [
 		pro: true,
 	},
 ];
+
+/**
+ * Carry per-note state across a rename. Muted notes are stored by path, so renaming or moving
+ * a muted note silently un-muted it (and left the old path in data.json forever). Handles a
+ * renamed folder too, by prefix. Returns null when nothing matched, so the caller can skip
+ * the save.
+ */
+export function renamePaths(paths: readonly string[], oldPath: string, newPath: string): string[] | null {
+	let changed = false;
+	const prefix = `${oldPath}/`;
+	const next = paths.map((path) => {
+		if (path === oldPath) {
+			changed = true;
+			return newPath;
+		}
+		if (path.startsWith(prefix)) {
+			changed = true;
+			return `${newPath}/${path.slice(prefix.length)}`;
+		}
+		return path;
+	});
+	return changed ? [...new Set(next)] : null;
+}

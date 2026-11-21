@@ -1,7 +1,7 @@
 import { MarkdownView, Notice } from "obsidian";
 import type ProseLensPlugin from "./main";
 import { requirePro } from "./ui/pro/ProGate";
-import { wordAtCursor } from "./core/wordAtCursor.mjs";
+import { ignorableMarkAt, wordAtCursor } from "./core/wordAtCursor.mjs";
 import { RULE_LABELS } from "./settings";
 
 /**
@@ -71,29 +71,28 @@ export function registerCommands(plugin: ProseLensPlugin): void {
 			const cursor = editor.getCursor();
 			const word = wordAtCursor(editor.getLine(cursor.line), cursor.ch);
 			if (!word) return;
-			const lower = word.toLowerCase();
-			if (plugin.settings.ignoredWords.includes(lower)) return;
 
 			// Only offer this on a word we actually marked. It used to appear on every word in
 			// every note, so it read as generic menu clutter — `Ignore "the" everywhere` — and
 			// the one moment it exists for, right-clicking a mark you disagree with, looked
 			// exactly the same as all the noise. Naming the rule makes the offer legible.
+			// The mark's own `word` is what gets ignored, so a phrase mark offers the phrase.
 			const offset = editor.posToOffset(cursor);
-			const mark = plugin
-				.currentAnalysis()
-				?.marks.find(
-					(candidate) =>
-						candidate.word === lower && candidate.from <= offset && candidate.to >= offset
-				);
-			if (!mark) return;
+			const mark = ignorableMarkAt(
+				plugin.currentAnalysis()?.marks ?? [],
+				offset,
+				plugin.settings.ignoredWords
+			);
+			if (!mark?.word) return;
+			const target = mark.word;
 
 			const label = RULE_LABELS.find((rule) => rule.id === mark.rule)?.name.toLowerCase();
 			menu.addItem((item) =>
 				item
-					.setTitle(label ? `Stop marking "${word}" as a ${singular(label)}` : `Ignore "${word}" everywhere`)
+					.setTitle(label ? `Stop marking "${target}" as a ${singular(label)}` : `Ignore "${target}" everywhere`)
 					.setIcon("eye-off")
 					.onClick(() => {
-						void plugin.ignoreWord(lower);
+						void plugin.ignoreWord(target);
 					})
 			);
 		})
@@ -115,7 +114,9 @@ function singular(label: string): string {
 function jumpToMark(plugin: ProseLensPlugin, checking: boolean, direction: 1 | -1): boolean {
 	const view = plugin.app.workspace.getActiveViewOfType(MarkdownView);
 	const marks = plugin.currentAnalysis()?.marks ?? [];
-	if (!view || marks.length === 0) return false;
+	// With style marks switched off nothing is painted, so walking the analysis would move
+	// the cursor to highlights the user cannot see and announce them in a notice.
+	if (!view || !plugin.settings.marksEnabled || marks.length === 0) return false;
 	if (checking) return true;
 
 	const cursor = view.editor.posToOffset(view.editor.getCursor());

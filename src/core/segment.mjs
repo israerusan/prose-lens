@@ -156,6 +156,10 @@ export function segmentSentences(text, masked) {
 
 			const tightened = masked.slice(from, to);
 			const wordList = words(masked, from, to);
+			// A wordless fragment ("2024.", a stray "!", leftover punctuation) is not a sentence
+			// a reader reads. Counting it dragged the average sentence length — and with it the
+			// grade — down, and drew a zero-length bar in the rhythm map.
+			if (wordList.length === 0) continue;
 			let syllables = 0;
 			for (const word of wordList) syllables += countSyllables(word.text);
 			sentences.push({ from, to, text: tightened, words: wordList.length, syllables });

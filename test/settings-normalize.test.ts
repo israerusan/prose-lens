@@ -7,7 +7,7 @@
 // and no way for a user to work out why. The only recourse is deleting a file they do not know
 // exists.
 import assert from "node:assert";
-import { BOUNDS, DEFAULT_SETTINGS, SCHEMA_VERSION, normalizeSettings } from "../src/settings";
+import { BOUNDS, DEFAULT_SETTINGS, SCHEMA_VERSION, normalizeSettings, renamePaths } from "../src/settings";
 
 // --- nothing at all is the same as the defaults --------------------------------------------------
 {
@@ -121,3 +121,14 @@ import { BOUNDS, DEFAULT_SETTINGS, SCHEMA_VERSION, normalizeSettings } from "../
 }
 
 console.log("ok  settings-normalize.test.ts");
+
+// --- muted notes follow a rename ----------------------------------------------------------------
+// mutedPaths is keyed by path, so renaming or moving a muted note silently un-muted it.
+{
+	assert.deepEqual(renamePaths(["a.md", "b.md"], "a.md", "c.md"), ["c.md", "b.md"]);
+	assert.deepEqual(renamePaths(["Drafts/x.md", "Draftsy.md"], "Drafts", "Archive"), [
+		"Archive/x.md",
+		"Draftsy.md",
+	]);
+	assert.equal(renamePaths(["a.md"], "z.md", "y.md"), null, "no match, no save");
+}

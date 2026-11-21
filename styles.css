@@ -81,10 +81,11 @@
 
 /* A quiet mark: still there, still hoverable, but a hairline instead of a shout. Used for
  * the modal passive ("this should be flagged") — correct, but the register of instructions,
- * and marking it at full weight makes the tool feel like it is arguing with your docs. */
+ * and marking it at full weight makes the tool feel like it is arguing with your docs.
+ * It keeps the passive's own double underline: overriding the style to dotted made a quiet
+ * passive the same shape as a hedge, breaking the "every rule has its own shape" promise. */
 .pl-quiet {
 	text-decoration-thickness: 1px;
-	text-decoration-style: dotted;
 	background-color: transparent;
 }
 

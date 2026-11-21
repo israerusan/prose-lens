@@ -191,24 +191,50 @@ function fenceAt(raw, index) {
  * survive, only the `- `, `> `, `1. ` prefix goes.
  */
 function maskLineKinds(text, out) {
+	// CommonMark: an indented code block cannot interrupt a paragraph (the indented line is a
+	// lazy continuation of it), and inside a list an indented line after a blank is a
+	// continuation paragraph of the item, not code. Masking either one blinded every rule to
+	// real prose. `prevParagraph` is "the previous line was prose"; `inList` is "we are still
+	// inside a list" — it survives blank lines and ends at an unindented non-list line.
+	let prevParagraph = false;
+	let inList = false;
+	let prevBlank = true;
 	for (const { from, to } of lineRanges(text)) {
 		const raw = text.slice(from, to);
-		if (raw.trim() === "") continue;
+		if (raw.trim() === "") {
+			prevParagraph = false;
+			prevBlank = true;
+			continue;
+		}
+		const wasBlank = prevBlank;
+		prevBlank = false;
 		// Already fully masked (inside a fence)? Leave it.
-		if (out.slice(from, to).join("").trim() === "") continue;
+		if (out.slice(from, to).join("").trim() === "") {
+			prevParagraph = false;
+			continue;
+		}
 
-		const body = raw.slice(lineContext(raw).start);
+		const context = lineContext(raw);
+		const body = raw.slice(context.start);
+		const isListItem = /^[ \t]*(?:[-*+]|\d{1,9}[.)])\s/.test(raw);
+		if (isListItem) inList = true;
+		else if (wasBlank && !/^(\t| {2,})/.test(raw)) inList = false;
 
 		if (/^#{1,6}\s/.test(body)) {
 			blank(out, from, to);
+			prevParagraph = false;
+			// A heading can never be a lazy list continuation, so an unindented one ends the list.
+			if (context.start === 0) inList = false;
 			continue;
 		}
 		if (/^(={2,}|-{3,}|\*{3,}|_{3,})\s*$/.test(body)) {
 			blank(out, from, to);
+			prevParagraph = false;
 			continue;
 		}
 		if (body.startsWith("|")) {
 			blank(out, from, to);
+			prevParagraph = false;
 			continue;
 		}
 		// Indented code: 4+ spaces or a tab, and not a list item.
@@ -217,13 +243,25 @@ function maskLineKinds(text, out) {
 		// /^(\t| {4,})\s*(marker)/ — two greedy quantifiers competing for the SAME run of
 		// spaces, which backtracks quadratically: 16,000 leading spaces took 147ms, on
 		// every keystroke. `[ \t]+` consumes the run exactly once.
-		if (/^(\t| {4,})\S/.test(raw) && !/^[ \t]+(?:[-*+]|\d{1,9}[.)])\s/.test(raw)) {
+		if (!prevParagraph && !inList && /^(\t| {4,})\S/.test(raw) && !isListItem) {
 			blank(out, from, to);
 			continue;
 		}
+		prevParagraph = true;
 
 		const marker = /^\s{0,6}(>\s?|[-*+]\s+|\d{1,9}[.)]\s+|\[[ xX]\]\s+)+/.exec(raw);
 		if (marker) blank(out, from, from + marker[0].length);
+
+		// A callout's type marker — `> [!note]`, `> [!tip]-` — is syntax, not prose. Left in,
+		// its "!" read as sentence-ending punctuation and split the title into a wordless
+		// fragment that counted as a sentence in the grade. The title after it survives.
+		if (context.depth > 0) {
+			const callout = /^\[![^\]\n]{1,40}\][+-]?/.exec(body);
+			if (callout) {
+				const start = from + context.start;
+				blank(out, start, start + callout[0].length);
+			}
+		}
 	}
 }
 
