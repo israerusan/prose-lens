@@ -143,3 +143,66 @@ maskText("```\n".repeat(10000));
 assert.ok(Date.now() - t0 < 2000, "the bounded scanners must stay linear");
 
 console.log("ok  mask-regressions.test.mjs (round 2)");
+
+// --- 1.1.2 roundtable review ---------------------------------------------------------------------
+
+// GFM tables without outer pipes. Only a leading `|` was recognised, so every cell of an
+// unpiped table was linted as prose.
+assert.deepEqual(rules("Name | Result\n--- | ---\nThe report | was quickly completed.\n"), []);
+assert.deepEqual(rules("Name | Result\n:--- | ---:\nThe report | was quickly completed\n"), []);
+assert.deepEqual(rules("> Name | Result\n> --- | ---\n> The report | was quickly completed.\n"), []);
+// The table ends at a line with no pipe; the prose after it is still analysed.
+assert.ok(rules("A | B\n--- | ---\nx | y\nThe file was quickly deleted.\n").includes("passive"));
+// A pipe in a sentence is not a table without a delimiter row.
+assert.ok(rules("Cats | dogs, and the file was quickly deleted.\n").includes("passive"));
+assert.ok(rules("Cats | dogs.\n---\nThe file was quickly deleted.\n").includes("passive"));
+
+// GFM requires the header and delimiter rows to have the same number of cells; prose with a
+// pipe over a mismatched dash row is not a table and must stay analysed.
+assert.ok(rules("The file was quickly deleted | sadly\n--- | --- | ---\n").includes("passive"));
+assert.ok(rules("The file was quickly deleted \\| sadly\n--- | ---\n").includes("passive"));
+assert.deepEqual(rules("| Name | Result |\n| --- | --- |\n| The report | was quickly completed. |\n"), []);
+assert.deepEqual(rules("| Only |\n| --- |\n| it was quickly deleted |\n"), []);
+assert.deepEqual(rules("a \\| b | c\n--- | ---\nx | it was quickly deleted\n"), []);
+// `\\|` is an escaped backslash then a REAL separator (backslash parity), so this is a table.
+assert.deepEqual(rules("The file was quickly deleted \\\\| sadly\n--- | ---\n"), []);
+// A line whose only pipe is escaped ends the table; it is prose.
+assert.ok(rules("a | b\n--- | ---\nx | y\nThe file was quickly deleted \\| sadly\n").includes("passive"));
+
+// Inline code spans longer than 1,000 characters. The old length cap made them literal
+// backticks, and their contents were linted.
+assert.deepEqual(rules("Intro.\n\n`" + "was quickly completed. ".repeat(60) + "` end.\n").filter((r) => r !== "longSentence"), []);
+// ...while a stray backtick still cannot pair across a paragraph break.
+assert.ok(rules("Press the ` key.\n\nIt was quickly written.\n\nRun `npm test` now.").includes("passive"));
+// An unmatched opener must not block a later span of a different length.
+assert.deepEqual(rules("A `` stray and `it was quickly deleted` here.").filter((r) => r !== "longSentence"), []);
+
+// A `>` inside a quoted HTML attribute does not end the tag.
+assert.deepEqual(rules('<span title="x > it was quickly deleted">Visible text.</span>\n'), []);
+assert.deepEqual(rules("<span title='x > it was quickly deleted'>Visible text.</span>\n"), []);
+// A long quoted value — an inline base64 image — is still one tag.
+assert.deepEqual(rules('<img alt="it was quickly deleted" src="data:image/png;base64,' + "A".repeat(20000) + '">\n'), []);
+assert.deepEqual(rules('<span title="' + "it was quickly deleted ".repeat(40) + '">x</span>\n').filter((r) => r !== "longSentence"), []);
+
+// Offsets still line up after every new pass.
+for (const doc of ["Name | Result\n--- | ---\na | b\n", "`" + "x".repeat(5000) + "`", '<a href="x>y">t</a>']) {
+	assert.strictEqual(maskText(doc).length, doc.length);
+}
+
+// Adversarial inputs for the new scanners stay linear: a single paragraph full of
+// unmatched backticks of many lengths (the case the 1,000-char cap used to bound), an HTML
+// tag with an unterminated quote, and a long table.
+{
+	const start = Date.now();
+	let ticks = "";
+	for (let i = 0; i < 20000; i++) ticks += "`".repeat((i % 7) + 1) + " x ";
+	maskText(ticks);
+	maskText(('<span title="' + "a ".repeat(400)).repeat(500));
+	maskText('<a x="' + "<b y ".repeat(60000));
+	maskText("<a b='".repeat(40000) + "z".repeat(100000));
+	maskText("a | b\n--- | ---\n" + "x | y\n".repeat(30000));
+	maskText("a | b\n" + "-".repeat(50000) + " | " + " ".repeat(50000) + "x\n");
+	assert.ok(Date.now() - start < 2000, `1.1.2 scanners must stay linear (took ${Date.now() - start}ms)`);
+}
+
+console.log("ok  mask-regressions.test.mjs (1.1.2)");

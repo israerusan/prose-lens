@@ -1,5 +1,5 @@
 import { MarkdownView, Plugin, type WorkspaceLeaf } from "obsidian";
-import type { EditorView } from "@codemirror/view";
+import { EditorView } from "@codemirror/view";
 import type { Analysis } from "./core/types.d.mts";
 import type { Snapshot } from "./core/delta.d.mts";
 import { resolveLicenseTransition } from "./core/licenseTransition.mjs";
@@ -9,6 +9,7 @@ import { PRODUCT_NAME } from "./product";
 import { DEFAULT_SETTINGS, normalizeSettings, renamePaths, type ProseLensSettings } from "./settings";
 import { ProseLensSettingTab } from "./ui/SettingsTab";
 import { proseLensExtension, type EditorHost } from "./editor/proseLensExtension";
+import { analysisDriftField, analysisField } from "./editor/state";
 import { ProsePanelView, VIEW_TYPE_PROSE_PANEL } from "./ui/ProsePanelView";
 import { StatusBar } from "./ui/StatusBar";
 import { noticeFocus, noticeMarks, noticeMuted, registerCommands } from "./commands";
@@ -32,6 +33,22 @@ function pathForLeaf(leaf: WorkspaceLeaf): string | null {
 	if (view instanceof MarkdownView && view.file) return view.file.path;
 	const file = leaf.getViewState().state?.file;
 	return typeof file === "string" ? file : null;
+}
+
+/**
+ * Re-key one path-keyed cache across a rename. A renamed folder moves every note under it,
+ * matched by prefix the same way `renamePaths` handles muted paths.
+ */
+function renameKeys<T>(map: Map<string, T>, oldPath: string, newPath: string): void {
+	const prefix = `${oldPath}/`;
+	for (const [path, value] of [...map]) {
+		let next: string | null = null;
+		if (path === oldPath) next = newPath;
+		else if (path.startsWith(prefix)) next = `${newPath}/${path.slice(prefix.length)}`;
+		if (next === null) continue;
+		map.delete(path);
+		map.set(next, value);
+	}
 }
 
 /** How long a burst of continuous setting changes is coalesced before a write. */
@@ -109,11 +126,13 @@ export default class ProseLensPlugin extends Plugin implements EditorHost {
 		// note" must survive a rename too — both are keyed by path.
 		this.registerEvent(
 			this.app.vault.on("rename", (file, oldPath) => {
-				const baseline = this.baselines.get(oldPath);
-				if (baseline) {
-					this.baselines.delete(oldPath);
-					this.baselines.set(file.path, baseline);
-				}
+				// All three per-note caches move, not just the baseline. Leaving `analyses`
+				// behind meant a renamed note re-published nothing on the next tab switch — the
+				// status bar and panel blanked until the user typed — and layout-change then
+				// evicted the orphaned entry.
+				renameKeys(this.baselines, oldPath, file.path);
+				renameKeys(this.analyses, oldPath, file.path);
+				renameKeys(this.skips, oldPath, file.path);
 				const muted = renamePaths(this.settings.mutedPaths, oldPath, file.path);
 				if (muted) {
 					this.settings.mutedPaths = muted;
@@ -121,6 +140,26 @@ export default class ProseLensPlugin extends Plugin implements EditorHost {
 				}
 			})
 		);
+
+		// A deleted note must not leave its mute behind: a new note created later at the same
+		// path would silently start out muted, with nothing in it to explain why.
+		this.registerEvent(
+			this.app.vault.on("delete", (file) => {
+				const prefix = `${file.path}/`;
+				const kept = this.settings.mutedPaths.filter(
+					(path) => path !== file.path && !path.startsWith(prefix)
+				);
+				if (kept.length !== this.settings.mutedPaths.length) {
+					this.settings.mutedPaths = kept;
+					void this.saveSettings();
+				}
+			})
+		);
+
+		// The panel skips renders while it is hidden (a background sidebar tab, a collapsed
+		// drawer); these are the moments it can become visible again.
+		this.registerEvent(this.app.workspace.on("layout-change", () => this.refreshPanels(true)));
+		this.registerEvent(this.app.workspace.on("active-leaf-change", () => this.refreshPanels(true)));
 
 		this.addSettingTab(new ProseLensSettingTab(this));
 
@@ -319,7 +358,7 @@ export default class ProseLensPlugin extends Plugin implements EditorHost {
 	 * getMostRecentLeaf exists for this case: the API doc describes it as being for
 	 * "interacting with the leaf in the root split while a sidebar leaf might be active".
 	 */
-	private activeMarkdownView(): MarkdownView | null {
+	activeMarkdownView(): MarkdownView | null {
 		const recent = this.app.workspace.getMostRecentLeaf()?.view;
 		if (recent instanceof MarkdownView) return recent;
 		return this.app.workspace.getActiveViewOfType(MarkdownView);
@@ -330,10 +369,42 @@ export default class ProseLensPlugin extends Plugin implements EditorHost {
 		const active = this.activeMarkdownView();
 		if (!active || typeof offset !== "number" || offset < 0) return;
 		const editor = active.editor;
-		const position = editor.offsetToPos(Math.min(offset, editor.getValue().length));
+		const mapped = this.offsetMapper(active)(offset);
+		// Clamp against the CodeMirror doc length when we have it; getValue() would
+		// materialise the whole note into a string on every click just to read its length.
+		const length = this.cmViewFor(active)?.state.doc.length ?? editor.getValue().length;
+		const position = editor.offsetToPos(Math.min(mapped, length));
 		editor.setCursor(position);
 		editor.scrollIntoView({ from: position, to: position }, true);
 		editor.focus();
+	}
+
+	/**
+	 * The CodeMirror view behind a MarkdownView, through CodeMirror's own public lookup
+	 * rather than Obsidian's private `editor.cm`. The first `.cm-editor` in document order is
+	 * the note's own; editors embedded in Live Preview are nested inside it.
+	 */
+	private cmViewFor(view: MarkdownView): EditorView | null {
+		const dom = view.containerEl.querySelector<HTMLElement>(".cm-editor");
+		return dom ? EditorView.findFromDOM(dom) : null;
+	}
+
+	/**
+	 * Map an offset from the published analysis into the document as it stands NOW.
+	 *
+	 * Analysis is debounced, so for up to 250ms after a keystroke — longer for a steady
+	 * typist — every offset in it is stale. The marks in the editor are mapped through the
+	 * edits (decorationField), but the panel rows and the next/previous-mark commands read
+	 * raw offsets, so a click right after typing above a mark jumped to the wrong place.
+	 * Only maps when that editor's analysis IS the one the offset came from.
+	 */
+	offsetMapper(view: MarkdownView): (offset: number) => number {
+		const identity = (offset: number) => offset;
+		const cm = this.cmViewFor(view);
+		if (!cm || cm.state.field(analysisField, false) !== this.activeAnalysis) return identity;
+		const drift = cm.state.field(analysisDriftField, false);
+		if (!drift || drift.empty) return identity;
+		return (offset) => (offset > drift.length ? offset : drift.mapPos(offset, 1));
 	}
 
 	async activatePanel(): Promise<void> {
@@ -344,10 +415,15 @@ export default class ProseLensPlugin extends Plugin implements EditorHost {
 		void this.app.workspace.revealLeaf(leaf);
 	}
 
-	private refreshPanels(): void {
+	/**
+	 * Re-render every prose panel. A hidden panel is only marked stale, and `onlyStale` renders
+	 * just the ones that were — the rhythm map is one element per sentence, so rebuilding a
+	 * panel nobody can see on every typing pause was pure main-thread cost on a long note.
+	 */
+	private refreshPanels(onlyStale = false): void {
 		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_PROSE_PANEL)) {
 			const view = leaf.view;
-			if (view instanceof ProsePanelView) view.render();
+			if (view instanceof ProsePanelView) view.requestRender(onlyStale);
 		}
 	}
 

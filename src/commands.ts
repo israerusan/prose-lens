@@ -1,4 +1,4 @@
-import { MarkdownView, Notice } from "obsidian";
+import { Notice } from "obsidian";
 import type ProseLensPlugin from "./main";
 import { requirePro } from "./ui/pro/ProGate";
 import { ignorableMarkAt, wordAtCursor } from "./core/wordAtCursor.mjs";
@@ -27,7 +27,9 @@ export function registerCommands(plugin: ProseLensPlugin): void {
 		id: "toggle-marks-this-note",
 		name: "Mute style marks in this note",
 		checkCallback: (checking) => {
-			const path = plugin.app.workspace.getActiveViewOfType(MarkdownView)?.file?.path;
+			// The most recent note, not the active view: with the prose panel focused the active
+			// view is the sidebar, and the command vanished from the palette.
+			const path = plugin.activeMarkdownView()?.file?.path;
 			if (!path) return false;
 			if (!checking) void plugin.toggleMuted(path);
 			return true;
@@ -112,18 +114,32 @@ function singular(label: string): string {
  * as broken, and there is no natural place for the user to learn they have reached the end.
  */
 function jumpToMark(plugin: ProseLensPlugin, checking: boolean, direction: 1 | -1): boolean {
-	const view = plugin.app.workspace.getActiveViewOfType(MarkdownView);
+	// Same reason as mute: the note being revised, even while the prose panel has focus.
+	const view = plugin.activeMarkdownView();
 	const marks = plugin.currentAnalysis()?.marks ?? [];
 	// With style marks switched off nothing is painted, so walking the analysis would move
 	// the cursor to highlights the user cannot see and announce them in a notice.
 	if (!view || !plugin.settings.marksEnabled || marks.length === 0) return false;
 	if (checking) return true;
 
+	// Marks carry offsets from the last analysis, which can be a debounce window behind the
+	// text. Compare in the document's CURRENT coordinates, or "next" right after typing above
+	// a mark skips it or lands on the one before. revealOffset maps the target itself.
 	const cursor = view.editor.posToOffset(view.editor.getCursor());
-	const target =
-		direction === 1
-			? (marks.find((mark) => mark.from > cursor) ?? marks[0])
-			: ([...marks].reverse().find((mark) => mark.from < cursor) ?? marks[marks.length - 1]);
+	const map = plugin.offsetMapper(view);
+	const at = (mark: { from: number }) => map(mark.from);
+	let target = direction === 1 ? marks[0] : marks[marks.length - 1];
+	if (direction === 1) {
+		const found = marks.find((mark) => at(mark) > cursor);
+		if (found) target = found;
+	} else {
+		for (let i = marks.length - 1; i >= 0; i--) {
+			if (at(marks[i]) < cursor) {
+				target = marks[i];
+				break;
+			}
+		}
+	}
 	plugin.revealOffset(target.from);
 	new Notice(target.message);
 	return true;

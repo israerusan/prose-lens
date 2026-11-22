@@ -299,4 +299,24 @@ function mount(
 	assert.ok(!muted.root.text().includes("Open a note"));
 }
 
+// --- a hidden panel defers its render until it is shown ------------------------------------------
+// The rhythm map is one element per sentence; rebuilding it on every typing pause for a panel in
+// a background sidebar tab was pure main-thread cost.
+{
+	const { view, root } = mount();
+	let shown = false;
+	(view.containerEl as unknown as { isShown: () => boolean }).isShown = () => shown;
+	root.empty();
+	view.requestRender();
+	assert.equal(root.findAll((el) => el.hasClass("pl-bar")).length, 0, "no render while hidden");
+	view.requestRender(true);
+	assert.equal(root.findAll((el) => el.hasClass("pl-bar")).length, 0, "still hidden, still deferred");
+	shown = true;
+	view.requestRender(true);
+	assert.ok(root.findAll((el) => el.hasClass("pl-bar")).length > 0, "renders once shown");
+	root.empty();
+	view.requestRender(true);
+	assert.equal(root.findAll((el) => el.hasClass("pl-bar")).length, 0, "an up-to-date panel is not rebuilt on a layout change");
+}
+
 console.log("ok  panel.test.ts");

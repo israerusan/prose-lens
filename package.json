@@ -1,6 +1,6 @@
 {
   "name": "prose-lens",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Writing feedback in the Obsidian editor. Free marks, legend, counts and grade; Pro de-slop, echo, delta, and focus.",
   "main": "main.js",
   "type": "module",

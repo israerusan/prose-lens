@@ -66,6 +66,8 @@ export class ProsePanelView extends ItemView {
 	private targets: number[] = [];
 	/** How far through each rule's marks the user has walked, so a second click advances. */
 	private ruleCursor = new Map<string, number>();
+	/** An update arrived while the panel was hidden; render when it is next shown. */
+	private stale = false;
 
 	constructor(
 		leaf: WorkspaceLeaf,
@@ -94,8 +96,11 @@ export class ProsePanelView extends ItemView {
 		// releases its registrations on view unload, so every keystroke added hundreds more
 		// that were never freed. Delegation means the listener count is exactly one, forever.
 		this.registerDomEvent(this.contentEl, "click", (event) => {
-			const target = event.target;
-			if (!(target instanceof HTMLElement)) return;
+			// Obsidian's cross-window instanceOf, not `instanceof`: a panel dragged into a popout
+			// window lives in that window's DOM realm, where every element fails an instanceof
+			// check against the main window's HTMLElement and every click was dropped.
+			const target = event.targetNode;
+			if (!target?.instanceOf(HTMLElement)) return;
 			const ruleRow = target.closest<HTMLElement>("[data-pl-rule]");
 			if (ruleRow?.dataset.plRule) {
 				this.jumpToRule(ruleRow.dataset.plRule);
@@ -115,7 +120,22 @@ export class ProsePanelView extends ItemView {
 		this.targets = [];
 	}
 
+	/**
+	 * Render now if the panel can be seen; otherwise remember that it is out of date.
+	 * `onlyStale` is the "may have just become visible" path and renders nothing that is
+	 * already current.
+	 */
+	requestRender(onlyStale = false): void {
+		if (onlyStale && !this.stale) return;
+		if (!this.containerEl.isShown()) {
+			this.stale = true;
+			return;
+		}
+		this.render();
+	}
+
 	render(): void {
+		this.stale = false;
 		const root = this.contentEl;
 		root.empty();
 		root.addClass("pl-panel");

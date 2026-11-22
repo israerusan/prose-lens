@@ -175,6 +175,71 @@ function maskFencedCode(text, out) {
 	}
 }
 
+/**
+ * The cells of a table row: outer pipes optional, `\|` is an escaped literal pipe.
+ */
+function tableCells(body) {
+	return splitRow(body).cells;
+}
+
+/** True when the row has at least one unescaped pipe — i.e. it can be a table row at all. */
+function hasPipe(body) {
+	return splitRow(body).pipes > 0;
+}
+
+/**
+ * Split a row on unescaped pipes. A backslash escapes the NEXT character, whatever it is, so
+ * `\|` is a literal pipe but `\\|` is a literal backslash followed by a real separator —
+ * scanning in pairs gets the parity right without counting backslash runs.
+ */
+function splitRow(body) {
+	const trimmed = body.trim();
+	const cells = [];
+	let cell = "";
+	let pipes = 0;
+	let leading = false;
+	let trailing = false;
+	for (let i = 0; i < trimmed.length; i++) {
+		const char = trimmed[i];
+		if (char === "\\" && i + 1 < trimmed.length) {
+			cell += char + trimmed[i + 1];
+			i++;
+			continue;
+		}
+		if (char === "|") {
+			pipes++;
+			if (i === 0) leading = true;
+			if (i === trimmed.length - 1) trailing = true;
+			cells.push(cell);
+			cell = "";
+		} else {
+			cell += char;
+		}
+	}
+	cells.push(cell);
+	if (leading) cells.shift();
+	if (trailing && cells.length > 0) cells.pop();
+	return { cells, pipes };
+}
+
+/**
+ * True when `header` over `delimiter` opens a GFM table: the delimiter row is cells of
+ * dashes with optional alignment colons, it has at least one unescaped pipe, and — as GFM
+ * requires — it has exactly as many cells as the header. Without the count check, a line
+ * of prose that merely contained a pipe was hidden whenever a dash row followed it.
+ *
+ * Tested per cell, not with one regex over the whole row, so trailing whitespace cannot set
+ * two adjacent `[ \t]*` quantifiers backtracking.
+ */
+function opensTable(header, delimiter) {
+	// Both rows need a real (unescaped) pipe; `a \| b` is one cell of prose.
+	if (!hasPipe(header) || !hasPipe(delimiter) || !delimiter.includes("-")) return false;
+	const delimiterCells = tableCells(delimiter);
+	if (delimiterCells.length === 0) return false;
+	if (!delimiterCells.every((cell) => /^[ \t]*:?-+:?[ \t]*$/.test(cell))) return false;
+	return tableCells(header).length === delimiterCells.length;
+}
+
 /** The fence run beginning at `index`, or null. */
 function fenceAt(raw, index) {
 	const char = raw[index];
@@ -199,11 +264,19 @@ function maskLineKinds(text, out) {
 	let prevParagraph = false;
 	let inList = false;
 	let prevBlank = true;
-	for (const { from, to } of lineRanges(text)) {
+	// GFM table rows. A table is recognised by its delimiter row (`--- | :---:`), and the
+	// outer pipes are OPTIONAL — `Name | Result` is a valid header. Only checking for a
+	// leading `|` let every unpiped table reach the rule engine as prose, cells and all.
+	// Keyed on the delimiter row so a lone `|` in an ordinary sentence stays prose.
+	let inTable = false;
+	const lines = lineRanges(text);
+	for (let index = 0; index < lines.length; index++) {
+		const { from, to } = lines[index];
 		const raw = text.slice(from, to);
 		if (raw.trim() === "") {
 			prevParagraph = false;
 			prevBlank = true;
+			inTable = false;
 			continue;
 		}
 		const wasBlank = prevBlank;
@@ -231,6 +304,21 @@ function maskLineKinds(text, out) {
 			blank(out, from, to);
 			prevParagraph = false;
 			continue;
+		}
+		if (inTable && hasPipe(body)) {
+			blank(out, from, to);
+			continue;
+		}
+		inTable = false;
+		if (body.includes("|") && index + 1 < lines.length) {
+			const next = text.slice(lines[index + 1].from, lines[index + 1].to);
+			const nextContext = lineContext(next);
+			if (nextContext.depth === context.depth && opensTable(body, next.slice(nextContext.start))) {
+				inTable = true;
+				blank(out, from, to);
+				prevParagraph = false;
+				continue;
+			}
 		}
 		if (body.startsWith("|")) {
 			blank(out, from, to);
@@ -270,50 +358,66 @@ function maskLineKinds(text, out) {
  * backticks closes (CommonMark). The regex this replaced capped N at 3, so ````x````
  * leaked its contents straight into the rule engine.
  *
- * The closer search is BOUNDED, and that bound is not an optimisation — it is the
- * correctness fix. An unbounded search let a stray backtick ("Press the ` key.") pair with
- * the opening backtick of a real code span forty lines later and blank every paragraph in
- * between, which then re-paired every code span after it. CommonMark forbids a code span
- * from containing a blank line, so the scan stops at one; the length cap bounds the cost
- * of a document full of unmatched backticks at the same time.
+ * A span may not cross a blank line (CommonMark), and that is the ONLY bound. An earlier
+ * version also capped a span at 1,000 characters, which made any longer valid span — a
+ * pasted one-line command, a long regex — read as literal backticks with its contents
+ * linted as prose. The cap existed to bound the cost of a paragraph full of unmatched
+ * backticks; this version gets that bound structurally instead:
+ *
+ *   1. One pass collects every backtick run with its length and paragraph number.
+ *   2. Runs are grouped by length. An opener's closer is the next run of the same length,
+ *      found through a per-length cursor that only ever moves forward.
+ *
+ * Openers are visited in increasing position, so every cursor is monotonic and the whole
+ * match is linear in the document — no input can make it quadratic. A stray backtick
+ * ("Press the ` key.") still cannot pair across a paragraph break.
  */
-const MAX_CODE_SPAN = 1000;
-
 function maskInlineCode(text, out) {
-	let i = 0;
-	while (i < text.length) {
-		if (text[i] !== "`") {
+	/** @type {Array<{start: number, length: number, paragraph: number}>} */
+	const runs = [];
+	let paragraph = 0;
+	for (let i = 0; i < text.length; ) {
+		const char = text[i];
+		if (char === "\n") {
+			if (isBlankLineBreak(text, i)) paragraph++;
 			i++;
 			continue;
 		}
-		let openLength = 0;
-		while (text[i + openLength] === "`") openLength++;
-
-		let j = i + openLength;
-		let closeStart = -1;
-		const limit = Math.min(text.length, i + MAX_CODE_SPAN);
-		while (j < limit) {
-			if (text[j] === "\n" && isBlankLineBreak(text, j)) break;
-			if (text[j] !== "`") {
-				j++;
-				continue;
-			}
-			let closeLength = 0;
-			while (text[j + closeLength] === "`") closeLength++;
-			if (closeLength === openLength) {
-				closeStart = j;
-				break;
-			}
-			j += closeLength;
-		}
-
-		if (closeStart === -1) {
-			// No closer within the span's reach: the backticks are literal text.
-			i += openLength;
+		if (char !== "`") {
+			i++;
 			continue;
 		}
-		blank(out, i, closeStart + openLength);
-		i = closeStart + openLength;
+		let length = 0;
+		while (text[i + length] === "`") length++;
+		runs.push({ start: i, length, paragraph });
+		i += length;
+	}
+	if (runs.length < 2) return;
+
+	/** @type {Map<number, number[]>} run indices, in document order, per run length */
+	const byLength = new Map();
+	runs.forEach((run, index) => {
+		const list = byLength.get(run.length);
+		if (list) list.push(index);
+		else byLength.set(run.length, [index]);
+	});
+	/** @type {Map<number, number>} next unexamined position in each byLength list */
+	const cursor = new Map();
+
+	let consumedUntil = -1;
+	for (let index = 0; index < runs.length; index++) {
+		const opener = runs[index];
+		if (opener.start < consumedUntil) continue;
+		const list = byLength.get(opener.length) ?? [];
+		let k = cursor.get(opener.length) ?? 0;
+		while (k < list.length && list[k] <= index) k++;
+		cursor.set(opener.length, k);
+		if (k === list.length) continue;
+		const closer = runs[list[k]];
+		// No closer in this paragraph: the backticks are literal text.
+		if (closer.paragraph !== opener.paragraph) continue;
+		blank(out, opener.start, closer.start + closer.length);
+		consumedUntil = closer.start + closer.length;
 	}
 }
 
@@ -381,7 +485,13 @@ function maskHtml(text, out) {
 	while ((m = comment.exec(text)) !== null) {
 		blank(out, m.index, m.index + m[0].length);
 	}
-	const tag = /<\/?[A-Za-z][A-Za-z0-9-]{0,40}(\s[^<>\n]{0,500})?\/?>/g;
+	// Quoted attribute values are consumed whole, so a `>` inside one (`title="a > b"`) does
+	// not end the tag and leak the rest of the attribute into the rule engine as prose. The
+	// three alternatives start with disjoint characters, so each position can be matched
+	// exactly one way and a tag that never closes fails in linear time. A quoted value may
+	// run to 100,000 characters: `<img src="data:image/png;base64,…">` is ordinary in a note,
+	// and the old 500-character cap left every such tag, base64 and all, to the rules.
+	const tag = /<\/?[A-Za-z][A-Za-z0-9-]{0,40}(\s(?:[^<>"'\n]|"[^"\n]{0,100000}"|'[^'\n]{0,100000}'){0,500})?\/?>/g;
 	while ((m = tag.exec(text)) !== null) {
 		blank(out, m.index, m.index + m[0].length);
 	}

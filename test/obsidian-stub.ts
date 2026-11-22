@@ -29,6 +29,14 @@ export class FakeEl {
 	}
 
 	// --- Obsidian's HTMLElement extensions ---
+	/** Obsidian's cross-window instanceof (Node.instanceOf). */
+	instanceOf<T>(type: abstract new (...args: never[]) => T): this is T {
+		return this instanceof type;
+	}
+	/** Obsidian's Element.isShown — a fake panel is always on screen. */
+	isShown(): boolean {
+		return true;
+	}
 	createEl(tag: string, options?: { cls?: string; text?: string; href?: string }): FakeEl {
 		const child = new FakeEl(tag);
 		if (options?.cls) options.cls.split(/\s+/).filter(Boolean).forEach((c) => child.classes.add(c));
@@ -140,7 +148,8 @@ export class FakeEl {
 	/** Dispatch a click that BUBBLES, because delegation is the whole point of the panel's
 	 * single listener — a fake DOM without bubbling would test a panel that cannot exist. */
 	click(): void {
-		const event = { target: this as FakeEl };
+		// `targetNode` is Obsidian's cross-window alias for the target; the panel reads it.
+		const event = { target: this as FakeEl, targetNode: this as FakeEl };
 		let node: FakeEl | null = this;
 		while (node) {
 			for (const handler of node.listeners.click ?? []) handler(event);
@@ -351,6 +360,7 @@ export class PluginSettingTab extends Component {
 }
 
 export class ItemView extends Component {
+	containerEl = new FakeEl();
 	contentEl = new FakeEl();
 	constructor(public leaf: unknown) {
 		super();

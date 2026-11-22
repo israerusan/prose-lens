@@ -13,7 +13,13 @@ interface Command {
 	checkCallback?: (checking: boolean) => boolean;
 }
 
-function setup(text: string, cursorOffset: number, overrides: Partial<ProseLensSettings> = {}) {
+function setup(
+	text: string,
+	cursorOffset: number,
+	overrides: Partial<ProseLensSettings> = {},
+	/** Simulated edits since the analysis: how far each analysis offset has moved. */
+	drift = 0
+) {
 	const settings: ProseLensSettings = { ...DEFAULT_SETTINGS, ...overrides, ignoredWords: [] };
 	const analysis = analyze(text, { isPro: settings.isPro, ignoredWords: settings.ignoredWords });
 	const lines = text.split("\n");
@@ -56,6 +62,8 @@ function setup(text: string, cursorOffset: number, overrides: Partial<ProseLensS
 		addCommand: (command: Command) => commands.push(command),
 		registerEvent: () => undefined,
 		currentAnalysis: () => analysis,
+		activeMarkdownView: () => view,
+		offsetMapper: () => (offset: number) => offset + drift,
 		revealOffset: (offset: number) => revealed.push(offset),
 		ignoreWord: (word: string) => {
 			ignored.push(word);
@@ -146,4 +154,21 @@ assert.equal(
 	assert.equal(off.command("previous-mark")(false), false);
 	assert.equal(off.revealed.length, 0);
 	assert.equal(notices.length, before);
+}
+
+// --- next/previous compare in CURRENT coordinates, not the stale analysis -----------------------
+{
+	// Two adverbs. Since the analysis, 20 characters were typed at the top of the note, so the
+	// first adverb now sits 20 characters later than its recorded offset. With the cursor just
+	// past the first adverb's OLD position but before its new one, "next" must land on the
+	// first adverb — comparing stale offsets used to skip straight to the second.
+	const text = "She ran quickly home. He spoke softly to them.";
+	const first = text.indexOf("quickly");
+	const moved = setup(text, first + 5, {}, 20);
+	assert.equal(moved.command("next-mark")(false), true);
+	assert.equal(moved.revealed[0], first, "next must target the mark the cursor has not passed yet");
+
+	const still = setup(text, first + 5, {}, 0);
+	still.command("next-mark")(false);
+	assert.notEqual(still.revealed[0], first, "without drift the cursor is already past the first mark");
 }

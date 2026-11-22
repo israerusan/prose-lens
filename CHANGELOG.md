@@ -4,6 +4,33 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.2] - 2026-11-21
+
+Fixes from a multi-model review of 1.1.1.
+
+### Fixed
+- Tables written without outer pipes (`Name | Result` over `--- | ---`) are skipped like
+  any other table. Their cells used to be marked and counted as prose.
+- Inline code longer than 1,000 characters is skipped. A long one-line command or regex
+  used to be marked as prose.
+- A `>` inside a quoted HTML attribute (`title="a > b"`) no longer ends the tag early
+  and exposes the rest of the attribute to the rules.
+- Clicking a panel row, or running next/previous mark, right after typing now lands on
+  the right mark. Positions from the last analysis used to lag behind the edits.
+- Renaming a note (or its folder) no longer blanks the status bar and panel on the next
+  tab switch.
+- Deleting a muted note forgets the mute, so a new note at the same path is not silently
+  muted.
+- "Mute style marks in this note" and next/previous mark work while the prose panel has
+  focus.
+- Panel rows are clickable when the panel is in a popout window.
+
+### Performance
+- A hidden prose panel (a background sidebar tab, a collapsed drawer) no longer rebuilds
+  itself after every analysis; it catches up when shown. On a long note that was one
+  element per sentence rebuilt on every typing pause.
+- Inline-code matching is linear for any input, without the old length cap.
+
 ## [1.1.1] - 2026-11-21
 
 A fix-only release: making every documented behaviour actually hold.
@@ -155,6 +182,7 @@ First release.
   a missed passive is better than a false accusation on correct prose. Right-click any
   word to stop marking it.
 
+[1.1.2]: https://github.com/israerusan/prose-lens/releases/tag/1.1.2
 [1.1.1]: https://github.com/israerusan/prose-lens/releases/tag/1.1.1
 [1.1.0]: https://github.com/israerusan/prose-lens/releases/tag/1.1.0
 [1.0.2]: https://github.com/israerusan/prose-lens/releases/tag/1.0.2
