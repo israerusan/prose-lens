@@ -2,7 +2,7 @@ import { type Extension } from "@codemirror/state";
 import { Decoration, EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import type { Analysis } from "../core/types.d.mts";
 import { analyze } from "../core/ruleEngine.mjs";
-import type { ProseLensSettings } from "../settings";
+import { analysisOptions, type ProseLensSettings } from "../settings";
 import { buildDecorations } from "./decorations";
 import { analysisDriftField, analysisField, decorationField, setAnalysis, setDecorations } from "./state";
 import { focusPlugin } from "./focus";
@@ -130,13 +130,7 @@ export function proseLensExtension(host: EditorHost): Extension {
 				if (text === this.lastText) return;
 				this.lastText = text;
 
-				const analysis = analyze(text, {
-					rules: settings.rules,
-					longSentenceWords: settings.longSentenceWords,
-					veryLongSentenceWords: settings.veryLongSentenceWords,
-					ignoredWords: settings.ignoredWords,
-					isPro: settings.isPro,
-				});
+				const analysis = analyze(text, analysisOptions(settings));
 				this.publish(analysis);
 			}
 

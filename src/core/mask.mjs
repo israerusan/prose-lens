@@ -36,14 +36,29 @@
  * masked FIRST so a `#tag` or a `$x$` inside a code block can never be re-read as prose.
  */
 
-const SPACE = " ";
+const SPACE = 32;
+const NEWLINE = 10;
 
 /** Replace [from,to) with spaces, preserving newlines so line structure survives. */
 function blank(chars, from, to) {
 	const end = Math.min(to, chars.length);
 	for (let i = Math.max(0, from); i < end; i++) {
-		if (chars[i] !== "\n") chars[i] = SPACE;
+		if (chars[i] !== NEWLINE) chars[i] = SPACE;
 	}
+}
+
+/**
+ * The buffer as a string. Chunked `fromCharCode`, not `Array#join`: the buffer is UTF-16
+ * code units, so this is exact (a lone surrogate survives as itself, which a TextDecoder
+ * would replace), and at roughly a millisecond per 300k characters it is cheap enough to run
+ * between passes. Joining an array of one-character strings cost ~11ms a time.
+ */
+function toText(chars) {
+	let result = "";
+	for (let i = 0; i < chars.length; i += 8192) {
+		result += String.fromCharCode.apply(null, chars.subarray(i, i + 8192));
+	}
+	return result;
 }
 
 /**
@@ -52,24 +67,43 @@ function blank(chars, from, to) {
  */
 export function maskText(text) {
 	if (typeof text !== "string" || text.length === 0) return "";
-	// Index-based copy, NOT Array.from — Array.from splits by code point, which would
-	// break the 1:1 offset parity that the whole design depends on for astral chars.
-	const out = new Array(text.length);
-	for (let i = 0; i < text.length; i++) out[i] = text[i];
+	// One UTF-16 code unit per slot — the same units JavaScript string offsets count — so the
+	// 1:1 offset parity the whole design depends on holds for astral characters too.
+	const out = new Uint16Array(text.length);
+	for (let i = 0; i < text.length; i++) out[i] = text.charCodeAt(i);
 
 	maskFrontmatter(text, out);
 	maskFencedCode(text, out);
 	maskLineKinds(text, out);
-	maskInlineCode(text, out);
-	maskMath(text, out);
-	maskHtml(text, out);
-	maskWikilinks(text, out);
-	maskMarkdownLinks(text, out);
-	maskBareUrls(text, out);
-	maskTagsAndRefs(text, out);
-	maskEmphasis(text, out);
 
-	return out.join("");
+	// Every later pass scans what is LEFT, not the raw note. A `<!--`, a `$$` or a stray
+	// backtick inside a code fence used to pair with a delimiter in the prose after it and
+	// blank whole paragraphs; once a range is masked, nothing in it may open or close a span.
+	// The backslashes that escape a backtick are prose, so they survive into the scan text.
+	const passes = [
+		maskInlineCode, // and %%comments%%, in one scan: whichever opens first wins
+		maskMath,
+		maskHtml,
+		maskWikilinks,
+		maskMarkdownLinks,
+		maskBareUrls,
+		maskTagsAndRefs,
+		maskEmphasis,
+	];
+	for (const pass of passes) pass(toText(out), out);
+
+	return toText(out);
+}
+
+/** True when [from, to) of the buffer holds nothing but whitespace — the line is masked. */
+function isBlankRange(chars, from, to) {
+	for (let i = from; i < to; i++) {
+		const code = chars[i];
+		if (code !== SPACE && code !== NEWLINE && code !== 9 && code !== 13 && code !== 11 && code !== 12) {
+			return false;
+		}
+	}
+	return true;
 }
 
 /** Line start/end offsets, for the line-oriented passes. */
@@ -137,42 +171,102 @@ function maskFrontmatter(text, out) {
  *     that blanked the rest of the note.
  */
 function maskFencedCode(text, out) {
-	let open = null; // { char, length, depth }
+	let open = null; // { char, length, depth, indent }
+	/** Content column of the list item the current lines belong to, or -1 outside a list. */
+	let itemContent = -1;
 
 	for (const { from, to } of lineRanges(text)) {
 		const raw = text.slice(from, to);
 		const { start, depth } = lineContext(raw);
-		const fence = fenceAt(raw, start);
+		let fence = fenceAt(raw, start);
 
-		if (open === null) {
-			if (fence) {
-				open = { ...fence, depth };
+		if (open !== null) {
+			// The container that held the fence has ended (the quote stopped, or a list item's
+			// indentation did). An unterminated fence must not swallow the remainder of the
+			// note — and the line that ended it is re-read below, since it may open a fence.
+			// Only the fence's OWN quote markers are stripped: a `>` inside the code is content,
+			// and reading it as a quote made "  > literal" look unindented and end the fence.
+			const ended =
+				raw.trim() !== "" &&
+				(depth < open.depth || leadingWidth(quoteBody(raw, open.depth)) < open.indent);
+			if (!ended) {
 				blank(out, from, to);
+				// A closer must be the same marker, at least as long, at the same quote depth,
+				// and bare — an info string is only allowed on the opener.
+				if (
+					fence &&
+					fence.char === open.char &&
+					fence.length >= open.length &&
+					depth === open.depth &&
+					raw.slice(start + fence.length).trim() === ""
+				) {
+					open = null;
+				}
+				continue;
 			}
-			continue;
+			open = null;
 		}
 
-		// The container that held the fence has ended (the quote stopped, or a blank line
-		// broke it). An unterminated fence must not swallow the remainder of the note.
-		if (depth < open.depth && raw.trim() !== "") {
-			open = null;
-			continue;
+		// A fence can open on the list item's own line: "- ```js". The marker sits between the
+		// quote prefix and the fence, so it is stepped over here; the item's content column
+		// becomes the indentation every line of the fence must keep.
+		//
+		// A task checkbox ("- [ ] ```js") is stepped over too, but it is CONTENT, so it does not
+		// move the content column. And an indented opener with no marker ("  ```js" under a
+		// list item) is bounded the same way by its own indentation: CommonMark ends a list
+		// item's fence when the item ends, and treating it as a root fence let a fence the user
+		// had not closed yet blank every paragraph after the list.
+		//
+		// Only when there IS a list item: a root fence indented with a tab or a few spaces keeps
+		// CommonMark's rule — it ends at its closer, however its content lines are indented.
+		const own = leadingWidth(quoteBody(raw, depth));
+		let indent = fence && itemContent > 0 && own >= itemContent ? itemContent : 0;
+		const item = /^(?:(?:[-*+]|\d{1,9}[.)])[ \t]+)+/.exec(raw.slice(start));
+		if (!fence && item) {
+			const task = /^\[[ xX]\][ \t]+/.exec(raw.slice(start + item[0].length));
+			fence = fenceAt(raw, start + item[0].length + (task ? task[0].length : 0));
+			if (fence) indent = own + item[0].length;
 		}
-
-		blank(out, from, to);
-
-		// A closer must be the same marker, at least as long, at the same quote depth, and
-		// bare — an info string is only allowed on the opener.
-		if (
-			fence &&
-			fence.char === open.char &&
-			fence.length >= open.length &&
-			depth === open.depth &&
-			raw.slice(start + fence.length).trim() === ""
-		) {
-			open = null;
+		// Which list item, if any, the next lines belong to: an item sets its content column, and
+		// an unindented line that is not an item ends the list.
+		if (item) itemContent = own + item[0].length;
+		else if (raw.trim() !== "" && own < 2) itemContent = -1;
+		if (fence) {
+			open = { ...fence, depth, indent };
+			blank(out, from, to);
 		}
 	}
+}
+
+/**
+ * The line with its blockquote prefix removed: each `>` takes at most one following space
+ * with it (CommonMark), so the indentation left over is the indentation INSIDE the quote.
+ */
+function quoteBody(raw, maxDepth = Infinity) {
+	let i = 0;
+	while (raw[i] === " " || raw[i] === "\t") i++;
+	if (raw[i] !== ">" || maxDepth <= 0) return raw;
+	let depth = 0;
+	while (raw[i] === ">" && depth++ < maxDepth) {
+		i++;
+		if (raw[i] === " ") i++;
+		if (depth >= maxDepth) break;
+		let k = i;
+		while (raw[k] === " " || raw[k] === "\t") k++;
+		if (raw[k] === ">") i = k;
+	}
+	return raw.slice(i);
+}
+
+/** Columns of leading whitespace, a tab counting as four. */
+function leadingWidth(raw) {
+	let width = 0;
+	for (const char of raw) {
+		if (char === " ") width++;
+		else if (char === "\t") width += 4;
+		else break;
+	}
+	return width;
 }
 
 /**
@@ -262,7 +356,14 @@ function maskLineKinds(text, out) {
 	// real prose. `prevParagraph` is "the previous line was prose"; `inList` is "we are still
 	// inside a list" — it survives blank lines and ends at an unindented non-list line.
 	let prevParagraph = false;
+	/** First line of the current paragraph, for a setext underline that turns it into a heading. */
+	let paragraphStart = -1;
+	let paragraphIsListItem = false;
+	let paragraphDepth = 0;
 	let inList = false;
+	/** Content column of the most recent list item, and whether we are in its indented code. */
+	let listContent = 2;
+	let inListCode = false;
 	let prevBlank = true;
 	// GFM table rows. A table is recognised by its delimiter row (`--- | :---:`), and the
 	// outer pipes are OPTIONAL — `Name | Result` is a valid header. Only checking for a
@@ -282,7 +383,7 @@ function maskLineKinds(text, out) {
 		const wasBlank = prevBlank;
 		prevBlank = false;
 		// Already fully masked (inside a fence)? Leave it.
-		if (out.slice(from, to).join("").trim() === "") {
+		if (isBlankRange(out, from, to)) {
 			prevParagraph = false;
 			continue;
 		}
@@ -290,8 +391,25 @@ function maskLineKinds(text, out) {
 		const context = lineContext(raw);
 		const body = raw.slice(context.start);
 		const isListItem = /^[ \t]*(?:[-*+]|\d{1,9}[.)])\s/.test(raw);
-		if (isListItem) inList = true;
-		else if (wasBlank && !/^(\t| {2,})/.test(raw)) inList = false;
+		if (isListItem) {
+			inList = true;
+			const item = /^[ \t]*((?:[-*+]|\d{1,9}[.)])[ \t]*)/.exec(raw);
+			listContent = leadingWidth(raw) + (item ? item[1].length : 2);
+		} else if (wasBlank && !/^(\t| {2,})/.test(raw)) inList = false;
+
+		// Indented code INSIDE a list item: four columns past the item's content, after a blank
+		// line (or continuing one). The root rule below cannot apply inside a list — there an
+		// indented line is a continuation paragraph — so `obviously(x)` in an indented code
+		// block under "- Install it:" used to be marked as prose.
+		const indentWidth = leadingWidth(raw);
+		if (inList && !isListItem && context.depth === 0) {
+			if ((inListCode || (wasBlank && !prevParagraph)) && indentWidth >= listContent + 4) {
+				inListCode = true;
+				blank(out, from, to);
+				continue;
+			}
+		}
+		inListCode = false;
 
 		if (/^#{1,6}\s/.test(body)) {
 			blank(out, from, to);
@@ -302,6 +420,19 @@ function maskLineKinds(text, out) {
 		}
 		if (/^(={2,}|-{3,}|\*{3,}|_{3,})\s*$/.test(body)) {
 			blank(out, from, to);
+			// Under a paragraph, `===` / `---` is a setext underline: the paragraph above IS the
+			// heading, and a heading is not a prose sentence. Only a plain paragraph qualifies —
+			// under a list item or across a quote boundary the same line is a thematic break.
+			if (
+				prevParagraph &&
+				paragraphStart >= 0 &&
+				!paragraphIsListItem &&
+				paragraphDepth === context.depth &&
+				/^[=-]/.test(body) &&
+				leadingWidth(quoteBody(raw)) <= 3
+			) {
+				blank(out, lines[paragraphStart].from, from);
+			}
 			prevParagraph = false;
 			continue;
 		}
@@ -320,7 +451,10 @@ function maskLineKinds(text, out) {
 				continue;
 			}
 		}
-		if (body.startsWith("|")) {
+		// A row shape with no delimiter yet — a table being typed, or a broken one — is still
+		// cells, not sentences. But a line that merely STARTS with a pipe ("| The report was
+		// …") is an ordinary GFM paragraph, and hiding it blinded every rule to real prose.
+		if (body.startsWith("|") && splitRow(body).pipes >= 2) {
 			blank(out, from, to);
 			prevParagraph = false;
 			continue;
@@ -334,6 +468,19 @@ function maskLineKinds(text, out) {
 		if (!prevParagraph && !inList && /^(\t| {4,})\S/.test(raw) && !isListItem) {
 			blank(out, from, to);
 			continue;
+		}
+		// A list item, or a change of quote depth, starts a new block even with no blank line in
+		// between. Without this, `---` under "Action items / - a / - b" reached back over the
+		// bullets as one setext "paragraph" and blanked the lead-in and the whole list.
+		const bodyIsItem = /^(?:[-*+]|\d{1,9}[.)])\s/.test(body);
+		if (!prevParagraph || isListItem || bodyIsItem || context.depth !== paragraphDepth) {
+			paragraphStart = index;
+			// Tested on the body too: "> - item" is a list item inside a quote, and the raw-line
+			// test above cannot see past the `>`. The surrounding list only counts for an unquoted
+			// line: a quote that follows "- buy milk" is its own block, and its setext heading is
+			// still a heading.
+			paragraphIsListItem = isListItem || bodyIsItem || (inList && context.depth === 0);
+			paragraphDepth = context.depth;
 		}
 		prevParagraph = true;
 
@@ -371,9 +518,17 @@ function maskLineKinds(text, out) {
  * Openers are visited in increasing position, so every cursor is monotonic and the whole
  * match is linear in the document — no input can make it quadratic. A stray backtick
  * ("Press the ` key.") still cannot pair across a paragraph break.
+ *
+ * Obsidian comments (`%%like this%%`, inline or across lines) go through the SAME scan,
+ * because whichever opens first wins: a backtick inside a comment is hidden text, and a `%%`
+ * inside a code span is code. Masked in separate passes, one always ran first and got the
+ * other wrong — "%%was `old%% is `new`" blanked the visible "is" and exposed the comment.
+ * Comment delimiters pair in document order and may cross blank lines; an unclosed `%%` is
+ * literal rather than allowed to swallow the rest of the note. Comment tokens use length
+ * key -1, so they never pair with a backtick run.
  */
 function maskInlineCode(text, out) {
-	/** @type {Array<{start: number, length: number, paragraph: number}>} */
+	/** @type {Array<{start: number, length: number, paragraph: number, escaped: boolean, comment?: boolean}>} */
 	const runs = [];
 	let paragraph = 0;
 	for (let i = 0; i < text.length; ) {
@@ -383,23 +538,33 @@ function maskInlineCode(text, out) {
 			i++;
 			continue;
 		}
+		if (char === "%" && text[i + 1] === "%") {
+			runs.push({ start: i, length: 2, paragraph, escaped: false, comment: true });
+			i += 2;
+			continue;
+		}
 		if (char !== "`") {
 			i++;
 			continue;
 		}
 		let length = 0;
 		while (text[i + length] === "`") length++;
-		runs.push({ start: i, length, paragraph });
+		// `\`` is a literal backtick in prose, so an escaped run cannot OPEN a span. It can
+		// still close one: backslashes are literal inside code, so `C:\` ends at its backtick.
+		let slashes = 0;
+		while (text[i - 1 - slashes] === "\\") slashes++;
+		runs.push({ start: i, length, paragraph, escaped: slashes % 2 === 1 });
 		i += length;
 	}
 	if (runs.length < 2) return;
 
 	/** @type {Map<number, number[]>} run indices, in document order, per run length */
 	const byLength = new Map();
+	const keyOf = (run) => (run.comment ? -1 : run.length);
 	runs.forEach((run, index) => {
-		const list = byLength.get(run.length);
+		const list = byLength.get(keyOf(run));
 		if (list) list.push(index);
-		else byLength.set(run.length, [index]);
+		else byLength.set(keyOf(run), [index]);
 	});
 	/** @type {Map<number, number>} next unexamined position in each byLength list */
 	const cursor = new Map();
@@ -407,15 +572,17 @@ function maskInlineCode(text, out) {
 	let consumedUntil = -1;
 	for (let index = 0; index < runs.length; index++) {
 		const opener = runs[index];
-		if (opener.start < consumedUntil) continue;
-		const list = byLength.get(opener.length) ?? [];
-		let k = cursor.get(opener.length) ?? 0;
+		if (opener.start < consumedUntil || opener.escaped) continue;
+		const key = keyOf(opener);
+		const list = byLength.get(key) ?? [];
+		let k = cursor.get(key) ?? 0;
 		while (k < list.length && list[k] <= index) k++;
-		cursor.set(opener.length, k);
+		cursor.set(key, k);
 		if (k === list.length) continue;
 		const closer = runs[list[k]];
-		// No closer in this paragraph: the backticks are literal text.
-		if (closer.paragraph !== opener.paragraph) continue;
+		// No closer in this paragraph: the backticks are literal text. (A comment may span
+		// paragraphs.)
+		if (!opener.comment && closer.paragraph !== opener.paragraph) continue;
 		blank(out, opener.start, closer.start + closer.length);
 		consumedUntil = closer.start + closer.length;
 	}
@@ -497,12 +664,25 @@ function maskHtml(text, out) {
 	}
 }
 
-/** [[Note]], [[Note|alias]], ![[embed]] — masked in full. An alias is a label, not prose. */
+/**
+ * [[Note]] and ![[embed]] are masked in full. [[Note|alias]] keeps its ALIAS, exactly as
+ * [text](url) keeps its text: the alias is what Live Preview and reading view show, inside
+ * the sentence, so masking it hid real words from every rule and from the grade.
+ */
 function maskWikilinks(text, out) {
-	const re = /!?\[\[[^\]\n]{0,300}\]\]/g;
+	const re = /(!?)\[\[([^\]\n]{0,300})\]\]/g;
 	let m;
 	while ((m = re.exec(text)) !== null) {
-		blank(out, m.index, m.index + m[0].length);
+		const start = m.index;
+		const end = start + m[0].length;
+		const pipe = m[2].indexOf("|");
+		if (m[1] === "!" || pipe === -1 || m[2].slice(pipe + 1).trim() === "") {
+			blank(out, start, end);
+			continue;
+		}
+		const aliasStart = start + 2 + pipe + 1;
+		blank(out, start, aliasStart);
+		blank(out, end - 2, end);
 	}
 }
 
@@ -529,7 +709,12 @@ function maskBareUrls(text, out) {
 	const re = /\b(?:https?:\/\/|www\.)[^\s<>()[\]]{1,2000}/gi;
 	let m;
 	while ((m = re.exec(text)) !== null) {
-		blank(out, m.index, m.index + m[0].length);
+		// GFM autolinks leave trailing punctuation outside the link, and so must the mask:
+		// "Read https://example.com/docs. This was…" otherwise lost its full stop and the two
+		// sentences merged into one, skewing the grade and the long-sentence rule.
+		let end = m.index + m[0].length;
+		while (end > m.index + 1 && /[.,:;!?'"*_~]/.test(text[end - 1])) end--;
+		blank(out, m.index, end);
 	}
 }
 

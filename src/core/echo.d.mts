@@ -24,5 +24,7 @@ export const DEFAULT_ECHO_OPTIONS: EchoOptions;
 export function findEchoes(
 	masked: string,
 	sentences: Array<Pick<Sentence, "from" | "to">>,
-	options?: Partial<EchoOptions>
+	options?: Partial<EchoOptions>,
+	/** The unmasked text, same length; bigrams never join words across masked syntax. */
+	source?: string
 ): Echo[];

@@ -49,6 +49,8 @@ export function focusPlugin(host: EditorHost): Extension {
 				const drift = view.state.field(analysisDriftField, false);
 				let start = -1;
 				let end = -1;
+				/** The last sentence that starts before the cursor, when none contains it. */
+				let before: { from: number; to: number } | null = null;
 				for (const sentence of analysis.sentences) {
 					const mappedFrom = drift ? drift.mapPos(sentence.from, -1) : sentence.from;
 					if (cursor < mappedFrom) break;
@@ -58,8 +60,37 @@ export function focusPlugin(host: EditorHost): Extension {
 						end = mappedTo;
 						break;
 					}
+					before = { from: mappedFrom, to: mappedTo };
 				}
-				if (start < 0) return Decoration.none;
+				if (start < 0) {
+					// The cursor is in no sentence: on the blank line after one, or in a heading or
+					// a code block. Returning nothing here un-dimmed the WHOLE note, so arrowing past
+					// a paragraph break flashed everything bright. Keep the sentence just written lit
+					// when only whitespace separates it from the cursor; otherwise light the line.
+					//
+					// "Just written" means the cursor is still on that sentence's own line. At column
+					// 0 of a heading or the next list item the gap is whitespace too, but the line
+					// under the cursor is what the writer is on, so that line is lit instead.
+					const line = view.state.doc.lineAt(cursor);
+					const sameLine = before !== null && view.state.doc.lineAt(before.to).number === line.number;
+					const gap = before && sameLine && cursor - before.to <= 200 ? view.state.sliceDoc(before.to, cursor) : null;
+					if (before && gap !== null && gap.trim() === "") {
+						start = before.from;
+						end = before.to;
+					} else {
+						if (line.length > 0) {
+							start = line.from;
+							end = line.to;
+						} else if (before) {
+							// An empty line lights nothing, so dimming "everything but it" dimmed
+							// the whole note. Keep the last sentence written lit instead.
+							start = before.from;
+							end = before.to;
+						} else {
+							return Decoration.none;
+						}
+					}
+				}
 
 				const docLength = view.state.doc.length;
 				const from = Math.min(start, docLength);

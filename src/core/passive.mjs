@@ -14,6 +14,7 @@
  */
 
 import { words } from "./segment.mjs";
+import { hidesWords, visibleGapLength } from "./gap.mjs";
 import { ADVERB_EXCEPTIONS, IRREGULAR_PARTICIPLES, NON_PARTICIPLE_ED } from "./wordlists.mjs";
 
 /** Lists are authored as arrays for readability; these lookups run on every keystroke. */
@@ -148,6 +149,8 @@ const ED_ADJECTIVES = new Set([
  * reach across a masked span and marry a participle that is nowhere near it.
  */
 const MAX_GAP = 8;
+/** Longest raw gap ever examined: a hidden `[[target|` (at most 300 characters) plus a little. */
+const MAX_RAW_GAP = 320;
 
 /**
  * Passive constructions inside one sentence.
@@ -156,7 +159,7 @@ const MAX_GAP = 8;
  * @param {import("./types.d.mts").Sentence} sentence
  * @returns {import("./types.d.mts").Word[]} spans from the be-verb through the participle, absolute offsets
  */
-export function findPassive(masked, sentence) {
+export function findPassive(masked, sentence, source) {
 	/** @type {import("./types.d.mts").Word[]} */
 	const found = [];
 	if (typeof masked !== "string" || !sentence) return found;
@@ -165,16 +168,19 @@ export function findPassive(masked, sentence) {
 
 	for (let i = 0; i < list.length; i++) {
 		const head = normalize(list[i].text);
-		if (!BE_VERBS.has(head) && !GET_VERBS.has(head)) continue;
+		const contracted = contractedBe(head);
+		if (!contracted && !BE_VERBS.has(head) && !GET_VERBS.has(head)) continue;
 
 		// The auxiliary, then up to two adverbs, then the participle: at most three
 		// words of lookahead, so the whole scan stays linear in sentence length.
 		for (let j = i + 1; j < list.length && j <= i + 3; j++) {
-			if (!adjacent(masked, list[j - 1], list[j])) break;
+			if (!adjacent(masked, list[j - 1], list[j], source)) break;
 
 			const word = normalize(list[j].text);
 			if (isParticiple(word)) {
-				if (ED_ADJECTIVES.has(word) && !followedByAgent(masked, list, j)) break;
+				if ((ED_ADJECTIVES.has(word) || STATIVE.has(word)) && !followedByAgent(masked, list, j, source)) break;
+				// "it's written" can be "it has written"; only an agent settles it as passive.
+				if (contracted === "ambiguous" && !followedByAgent(masked, list, j, source)) break;
 
 				const from = list[i].from;
 				const to = list[j].to;
@@ -196,22 +202,61 @@ export function findPassive(masked, sentence) {
 	return found;
 }
 
+/**
+ * Participles that, after a be- or get-verb, describe a STATE in ordinary notes: "she was born
+ * in Leeds", "we were done by noon", "the guests were gone", "they got married in June".
+ * Grammatically some are passive, but "name who did it" is nonsense advice there, and birth,
+ * completion and departure lines are normal vault prose. Like ED_ADJECTIVES, they still fire
+ * when an agent proves the verb reading: "the work was done by contractors".
+ */
+const STATIVE = new Set(["born", "done", "gone", "married", "engaged", "dressed", "finished"]);
+
+/** Pronouns whose `'s` can stand for "is" — and, just as often, for "has". */
+const S_CONTRACTION_HOSTS = new Set(["it", "he", "she", "that", "there", "what", "who", "here", "this"]);
+
+/**
+ * A be-verb contracted onto its subject. `'re` and `'m` can only be "are" / "am", so they
+ * count exactly like the full verb. `'s` is "is" OR "has" — "he's assigned a task" is active —
+ * so it is "ambiguous" and fires only when an agent ("by Alice") proves the passive.
+ *
+ * @returns {"be" | "ambiguous" | null}
+ */
+function contractedBe(word) {
+	const apostrophe = word.lastIndexOf("'");
+	if (apostrophe <= 0) return null;
+	const host = word.slice(0, apostrophe);
+	const tail = word.slice(apostrophe + 1);
+	if (tail === "re" || tail === "m") return "be";
+	if (tail === "s" && S_CONTRACTION_HOSTS.has(host)) return "ambiguous";
+	return null;
+}
+
 /** Lowercase, and fold the typographic apostrophe so "isn’t" matches "isn't". */
 function normalize(text) {
 	return text.toLowerCase().replace(/[’‘]/g, "'");
 }
 
-/** True when nothing but a little whitespace separates two words. */
-function adjacent(masked, left, right) {
+/**
+ * True when nothing but a little whitespace separates two words — and, when the source is
+ * given, nothing the mask HID either. The masked text turns inline code into spaces, so
+ * "The file was `x` deleted" read as "was deleted" and painted a passive mark straight across
+ * the code. Only hidden WORDS block, though: masked syntax the reader never sees as text —
+ * link brackets, a quote's `>`, emphasis — must not, or "was [rejected](url)" and a passive
+ * wrapped across two callout lines stop matching.
+ */
+function adjacent(masked, left, right, source) {
 	const gap = right.from - left.to;
-	if (gap < 0 || gap > MAX_GAP) return false;
+	// The raw bound first (a wikilink target is at most 300 characters), then the gap as
+	// the reader sees it: `[[quarterly report|rejected]]` is one word away from "was".
+	if (gap < 0 || gap > MAX_RAW_GAP) return false;
+	if (gap > MAX_GAP && visibleGapLength(source, masked, left.to, right.from) > MAX_GAP) return false;
 	for (let i = left.to; i < right.from; i++) {
 		const code = masked.charCodeAt(i);
 		// Punctuation between the auxiliary and the participle means they belong to
 		// different clauses ("it was, frankly, ignored" aside — we take the miss).
 		if (code !== 32 && code !== 9 && code !== 10 && code !== 13) return false;
 	}
-	return true;
+	return !hidesWords(source, masked, left.to, right.from);
 }
 
 /**
@@ -232,21 +277,53 @@ const NON_AGENT = new Set([
 	"far",
 	"itself",
 	"necessity",
+	// "done by noon", "gone by morning": a deadline, not an agent.
+	"noon",
+	"midnight",
+	"morning",
+	"evening",
+	"night",
+	"tonight",
+	"today",
+	"tomorrow",
+	"monday",
+	"tuesday",
+	"wednesday",
+	"thursday",
+	"friday",
+	"saturday",
+	"sunday",
+	"lunch",
+	"end",
+	"week",
+	"weekend",
+	"month",
+	"year",
+	"deadline",
+	"dinner",
 ]);
 
 /**
  * True when the word at `index` is followed by an agent phrase — the one cheap piece
  * of evidence that an ambiguous participle is doing verb work, not adjective work.
  */
-function followedByAgent(masked, list, index) {
+function followedByAgent(masked, list, index, source) {
 	const next = list[index + 1];
-	if (!next || !adjacent(masked, list[index], next)) return false;
+	if (!next || !adjacent(masked, list[index], next, source)) return false;
 	if (normalize(next.text) !== "by") return false;
 
-	const object = list[index + 2];
-	if (!object || !adjacent(masked, next, object)) return false;
+	let object = list[index + 2];
+	if (!object || !adjacent(masked, next, object, source)) return false;
+	// "done by the evening", "gone by next Friday": look past one determiner before deciding
+	// whether the object is a deadline. "by the contractors" is still an agent.
+	const after = list[index + 3];
+	if (DETERMINERS.has(normalize(object.text)) && after && adjacent(masked, object, after, source)) {
+		object = after;
+	}
 	return !NON_AGENT.has(normalize(object.text));
 }
+
+const DETERMINERS = new Set(["the", "a", "an", "this", "that", "next", "last", "each", "every"]);
 
 function isParticiple(word) {
 	if (IRREGULAR.has(word)) return true;

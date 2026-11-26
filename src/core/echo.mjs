@@ -11,6 +11,7 @@
  */
 
 import { words } from "./segment.mjs";
+import { hidesWords } from "./gap.mjs";
 import { STOPWORDS } from "./wordlists.mjs";
 
 export const DEFAULT_ECHO_OPTIONS = {
@@ -54,7 +55,7 @@ function isStopword(lower) {
  * @param {string} masked
  * @param {{from: number, to: number}} sentence
  */
-function tokenize(masked, sentence) {
+function tokenize(masked, sentence, source) {
 	const found = words(masked, sentence.from, sentence.to);
 	const tokens = new Array(found.length);
 	for (let i = 0; i < found.length; i++) {
@@ -63,6 +64,9 @@ function tokenize(masked, sentence) {
 		tokens[i] = {
 			lower,
 			from: w.from,
+			// False when masked syntax sits between this word and the previous one. "Alpha `x`
+			// beta" masks to "Alpha     beta", which must not count as the bigram "alpha beta".
+			joined: i > 0 && !maskedBetween(masked, source, found[i - 1].to, w.from),
 			stop: isStopword(lower),
 			// Capitalisation anywhere but the sentence opening is our only proper-noun
 			// signal, and the opening tells us nothing because every sentence starts big.
@@ -71,6 +75,15 @@ function tokenize(masked, sentence) {
 		};
 	}
 	return tokens;
+}
+
+/**
+ * True when the mask blanked real content in [from, to) — code, math, a URL: letters or
+ * digits the reader does not see as prose. Masked syntax (emphasis, link brackets, a quote's
+ * `>`) does not count: "alpha **beta**" and "alpha [beta](url)" are still "alpha beta".
+ */
+function maskedBetween(masked, source, from, to) {
+	return hidesWords(source, masked, from, to);
 }
 
 /** Word terms and bigram terms for one sentence, duplicates kept so counts stay honest. */
@@ -82,7 +95,7 @@ function sentenceTerms(tokens, minWordLength) {
 		if (!t.stop && t.lower.length >= minWordLength) wordTerms.push(t.lower);
 		const next = tokens[i + 1];
 		// "of the", "and it" — a bigram of two function words is noise, never a tic.
-		if (next && !(t.stop && next.stop)) phraseTerms.push(t.lower + " " + next.lower);
+		if (next && next.joined && !(t.stop && next.stop)) phraseTerms.push(t.lower + " " + next.lower);
 	}
 	return { wordTerms, phraseTerms };
 }
@@ -129,7 +142,7 @@ function sameOffsets(a, b) {
  * @param {Partial<typeof DEFAULT_ECHO_OPTIONS>} [options]
  * @returns {Array<{term: string, kind: "word"|"phrase", count: number, offsets: number[]}>}
  */
-export function findEchoes(masked, sentences, options) {
+export function findEchoes(masked, sentences, options, source) {
 	if (typeof masked !== "string" || !Array.isArray(sentences) || sentences.length === 0) return [];
 	const opt = resolveOptions(options);
 	if (opt.maxResults === 0) return [];
@@ -150,7 +163,7 @@ export function findEchoes(masked, sentences, options) {
 			removeTerms(wordWindow, leaving.wordTerms);
 			removeTerms(phraseWindow, leaving.phraseTerms);
 		}
-		const entry = sentenceTerms(tokenize(masked, sentences[i]), opt.minWordLength);
+		const entry = sentenceTerms(tokenize(masked, sentences[i], source), opt.minWordLength);
 		ring[i % window] = entry;
 		addTerms(wordWindow, entry.wordTerms, echoedWords, opt.minCount);
 		addTerms(phraseWindow, entry.phraseTerms, echoedPhrases, opt.minCount);
@@ -170,7 +183,7 @@ export function findEchoes(masked, sentences, options) {
 	const caps = new Map();
 
 	for (const sentence of sentences) {
-		const tokens = tokenize(masked, sentence);
+		const tokens = tokenize(masked, sentence, source);
 		for (let i = 0; i < tokens.length; i++) {
 			const t = tokens[i];
 			if (tracked.has(t.lower)) {
@@ -185,7 +198,7 @@ export function findEchoes(masked, sentences, options) {
 				else wordOffsets.set(t.lower, [t.from]);
 			}
 			const next = tokens[i + 1];
-			if (!next) continue;
+			if (!next || !next.joined) continue;
 			const phrase = t.lower + " " + next.lower;
 			if (!echoedPhrases.has(phrase)) continue;
 			const hits = phraseOffsets.get(phrase);

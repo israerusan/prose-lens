@@ -1,4 +1,4 @@
-import { PluginSettingTab, Setting } from "obsidian";
+import { PluginSettingTab, Setting, type SliderComponent } from "obsidian";
 import type ProseLensPlugin from "../main";
 import { BOUNDS, RULE_LABELS } from "../settings";
 import { createExternalLink } from "./links";
@@ -154,6 +154,11 @@ export class ProseLensSettingTab extends PluginSettingTab {
 				);
 		}
 
+		// The two thresholds clamp each other. Each slider is told the other's clamped value,
+		// so the screen never shows a number the plugin is not using: dragging "long" past
+		// "very long" used to move the stored very-long threshold while its slider sat still.
+		let veryLongSlider: SliderComponent | null = null;
+
 		new Setting(this.containerEl)
 			.setName("Long sentence threshold")
 			.setDesc("Words before a sentence is marked long.")
@@ -166,6 +171,7 @@ export class ProseLensSettingTab extends PluginSettingTab {
 						this.plugin.settings.longSentenceWords = value;
 						if (this.plugin.settings.veryLongSentenceWords <= value) {
 							this.plugin.settings.veryLongSentenceWords = value + 5;
+							veryLongSlider?.setValue(value + 5);
 						}
 						// A slider fires once per step; coalesce the whole drag into one save.
 						this.plugin.queueSave();
@@ -176,15 +182,15 @@ export class ProseLensSettingTab extends PluginSettingTab {
 			.setName("Very long sentence threshold")
 			.setDesc("Words before a sentence is marked as hard to read in one pass.")
 			.addSlider((slider) =>
-				slider
+				(veryLongSlider = slider)
 					.setLimits(BOUNDS.veryLongSentenceWords.min, BOUNDS.veryLongSentenceWords.max, 1)
 					.setValue(this.plugin.settings.veryLongSentenceWords)
 					.setDynamicTooltip()
 					.onChange((value) => {
-						this.plugin.settings.veryLongSentenceWords = Math.max(
-							value,
-							this.plugin.settings.longSentenceWords + 1
-						);
+						const stored = Math.max(value, this.plugin.settings.longSentenceWords + 1);
+						this.plugin.settings.veryLongSentenceWords = stored;
+						// Snap the handle back to the value actually in force.
+						if (stored !== value) veryLongSlider?.setValue(stored);
 						this.plugin.queueSave();
 					})
 			);

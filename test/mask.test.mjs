@@ -55,7 +55,11 @@ assert.ok(maskText("Hello.\n\n---\n\nWorld.").includes("World."));
 // --- math, URLs, links, wikilinks --------------------------------------------
 assertMasked("The value $x = was_computed$ holds.", "$x = was_computed$");
 assertMasked("See https://example.com/was-deleted for more.", "https://example.com/was-deleted");
-assertMasked("Read [[My Note|the note]] now.", "[[My Note|the note]]");
+// An alias is what Live Preview shows inside the sentence, so it is prose (1.1.3); the target is not.
+assertMasked("Read [[My Note|the note]] now.", "[[My Note|");
+assertKept("Read [[My Note|the note]] now.", "the note");
+assertMasked("Read [[My Note]] now.", "[[My Note]]");
+assertMasked("See ![[image.png|300]] here.", "![[image.png|300]]");
 assertMasked("Read [the docs](https://example.com/really) now.", "](https://example.com/really)");
 assertKept("Read [the docs](https://example.com/really) now.", "the docs");
 

@@ -6,7 +6,16 @@ import { resolveLicenseTransition } from "./core/licenseTransition.mjs";
 import { snapshot } from "./core/delta.mjs";
 import { LicenseManager } from "./license/LicenseManager";
 import { PRODUCT_NAME } from "./product";
-import { DEFAULT_SETTINGS, normalizeSettings, renamePaths, type ProseLensSettings } from "./settings";
+import {
+	DEFAULT_SETTINGS,
+	analysisOptions,
+	analysisSignature,
+	editorSignature,
+	normalizeSettings,
+	renamePaths,
+	type ProseLensSettings,
+} from "./settings";
+import { analyze } from "./core/ruleEngine.mjs";
 import { ProseLensSettingTab } from "./ui/SettingsTab";
 import { proseLensExtension, type EditorHost } from "./editor/proseLensExtension";
 import { analysisDriftField, analysisField } from "./editor/state";
@@ -51,14 +60,31 @@ function renameKeys<T>(map: Map<string, T>, oldPath: string, newPath: string): v
 	}
 }
 
+/**
+ * A note as it stood when it was opened, for "since you opened this note".
+ *
+ * The TEXT is kept, not just its numbers. A snapshot alone is only comparable with analyses
+ * made under the same settings: unlocking Pro (de-slop marks appear), switching a rule off,
+ * or ignoring a word moved the live counts while the baseline stayed put, and the delta
+ * reported edits the writer never made. With the text, the baseline is simply re-scored
+ * under the new settings the next time it is read.
+ */
+interface Baseline {
+	text: string;
+	signature: string;
+	snapshot: Snapshot;
+}
+
 /** How long a burst of continuous setting changes is coalesced before a write. */
 const SAVE_DEBOUNCE_MS = 400;
 
 export default class ProseLensPlugin extends Plugin implements EditorHost {
 	settings: ProseLensSettings = { ...DEFAULT_SETTINGS };
 
-	/** Bumped on every settings save; the editor extension re-runs when it changes. */
+	/** Bumped when a save changes anything an editor renders; the editor extension re-runs then. */
 	settingsEpoch = 0;
+	/** {@link editorSignature} as of the last epoch bump. */
+	private editorSignature = "";
 
 	private statusBar: StatusBar | null = null;
 	/** The analysis of the editor the user is actually looking at. */
@@ -73,7 +99,7 @@ export default class ProseLensPlugin extends Plugin implements EditorHost {
 	private skips = new Map<string, SkipReason>();
 	private activeSkip: SkipReason | null = null;
 	/** Opening state per note, for the Pro revision delta. Session-scoped, never persisted. */
-	private baselines = new Map<string, Snapshot>();
+	private baselines = new Map<string, Baseline>();
 	private saveTimer: number | null = null;
 
 	async onload(): Promise<void> {
@@ -146,6 +172,14 @@ export default class ProseLensPlugin extends Plugin implements EditorHost {
 		this.registerEvent(
 			this.app.vault.on("delete", (file) => {
 				const prefix = `${file.path}/`;
+				// The per-note caches go too. A sync that deletes and recreates a note at the
+				// same path otherwise handed the new note the old one's analysis and, worse, its
+				// delta baseline — "since you opened this note" measured against a dead file.
+				for (const cache of [this.analyses, this.skips, this.baselines]) {
+					for (const path of [...cache.keys()]) {
+						if (path === file.path || path.startsWith(prefix)) cache.delete(path);
+					}
+				}
 				const kept = this.settings.mutedPaths.filter(
 					(path) => path !== file.path && !path.startsWith(prefix)
 				);
@@ -212,6 +246,7 @@ export default class ProseLensPlugin extends Plugin implements EditorHost {
 	async loadSettings(): Promise<void> {
 		// Every coercion lives in normalizeSettings, where a test can reach it without an app.
 		this.settings = normalizeSettings(await this.loadData());
+		this.editorSignature = editorSignature(this.settings);
 	}
 
 	async saveSettings(): Promise<void> {
@@ -220,10 +255,20 @@ export default class ProseLensPlugin extends Plugin implements EditorHost {
 			this.saveTimer = null;
 		}
 		await this.saveData(this.settings);
-		this.settingsEpoch++;
-		// Public API for "re-apply editor extensions" — every open editor re-runs its analysis
-		// without this plugin ever reaching into a CodeMirror instance.
-		this.app.workspace.updateOptions();
+		// Only a change an editor can see re-runs the editors. Toggling the status bar, hiding
+		// the Pro sections, the welcome flag and every keystroke of a not-yet-valid license key
+		// used to make every open note re-analyse itself in full.
+		const signature = editorSignature(this.settings);
+		if (signature !== this.editorSignature) {
+			this.editorSignature = signature;
+			this.settingsEpoch++;
+			// Public API for "re-apply editor extensions" — every open editor re-runs its
+			// analysis without this plugin ever reaching into a CodeMirror instance.
+			this.app.workspace.updateOptions();
+		}
+		// The status bar used to be redrawn only by the re-analysis above; it is drawn here so
+		// its own toggle works without one.
+		this.statusBar?.render(this.activeAnalysis, this.settings.showStatusBar, this.activeSkip);
 		this.refreshPanels();
 	}
 
@@ -317,7 +362,13 @@ export default class ProseLensPlugin extends Plugin implements EditorHost {
 			// The first analysis after the note is opened becomes the delta baseline. The entry
 			// is dropped when the note closes, so "since you opened this note" is literally true.
 			if (analysis && !this.baselines.has(path)) {
-				this.baselines.set(path, snapshot(analysis.stats));
+				// The analysis was published synchronously from this exact document state, so the
+				// text read here is the text it describes.
+				this.baselines.set(path, {
+					text: view.state.doc.toString(),
+					signature: analysisSignature(this.settings),
+					snapshot: snapshot(analysis.stats),
+				});
 			}
 		}
 		if (!this.isActiveEditor(view)) return;
@@ -345,7 +396,15 @@ export default class ProseLensPlugin extends Plugin implements EditorHost {
 	currentBaseline(): Snapshot | null {
 		const path = this.activeMarkdownView()?.file?.path;
 		if (!path) return null;
-		return this.baselines.get(path) ?? null;
+		const baseline = this.baselines.get(path);
+		if (!baseline) return null;
+		const signature = analysisSignature(this.settings);
+		if (baseline.signature !== signature) {
+			// Settings moved since the note was opened: re-score the opening text under them, once.
+			baseline.snapshot = snapshot(analyze(baseline.text, analysisOptions(this.settings)).stats);
+			baseline.signature = signature;
+		}
+		return baseline.snapshot;
 	}
 
 	/**

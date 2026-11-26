@@ -13,4 +13,4 @@ export interface PassiveSpan {
 }
 
 /** Spans covering the be-verb (or get-passive) through the past participle. */
-export function findPassive(masked: string, sentence: Sentence): PassiveSpan[];
+export function findPassive(masked: string, sentence: Sentence, source?: string): PassiveSpan[];

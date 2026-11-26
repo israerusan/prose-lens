@@ -30,8 +30,9 @@ Most writing tools for Obsidian fail in one of two ways:
 Prose Lens fixes both.
 
 You keep drafting in Obsidian, and the plugin only analyses actual prose. Code fences,
-inline code, math, frontmatter, URLs, wikilinks, headings and table rows are masked before
-any rule runs.
+inline code, math, frontmatter, URLs, wikilink targets, `%%comments%%`, headings and table
+rows are masked before any rule runs. A wikilink's alias (`[[Note|the words you see]]`) is
+analysed, because it is part of the sentence your reader reads.
 
 That means:
 

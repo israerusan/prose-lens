@@ -20,6 +20,27 @@ const WORD_RE = /[A-Za-zÀ-ÖØ-öø-ÿ]+(?:['’’-][A-Za-zÀ-ÖØ-öø-ÿ]+)*
 const STANDALONE_LINE = /^\s{0,6}(?:[-*+]\s|\d{1,9}[.)]\s|>|#{1,6}\s|\||\[[ xX]\]\s)/;
 
 /**
+ * A list item (or bare task box): it opens a block its continuation lines may join. Any
+ * indent: a nested item four or eight spaces deep is still its own item, and capping the
+ * indent let it join the item above it as one unpunctuated "sentence". (`[ \t]*` then a
+ * literal marker cannot backtrack more than once per line, so this stays linear.)
+ */
+const LIST_ITEM_LINE = /^[ \t]*(?:[-*+][ \t]|\d{1,9}[.)][ \t]|\[[ xX]\][ \t])/;
+
+/** Blockquote depth of a line and what follows its markers. */
+function quoteOf(raw) {
+	let i = 0;
+	while (i < raw.length && (raw[i] === " " || raw[i] === "\t") && i < 6) i++;
+	let depth = 0;
+	while (raw[i] === ">") {
+		depth++;
+		i++;
+		while (raw[i] === " " || raw[i] === "\t") i++;
+	}
+	return { depth, body: depth > 0 ? raw.slice(i) : raw };
+}
+
+/**
  * Prose blocks in the document. A block never spans a blank line, and never merges
  * a list item with the line above it.
  *
@@ -39,6 +60,9 @@ export function splitBlocks(text, masked) {
 		start = -1;
 	};
 
+	/** Quote depth of the open block, or -1 when it is not a quote. */
+	let blockQuote = -1;
+
 	for (let i = 0; i <= text.length; i++) {
 		const atEnd = i === text.length;
 		if (!atEnd && text[i] !== "\n") continue;
@@ -46,14 +70,37 @@ export function splitBlocks(text, masked) {
 		const raw = text.slice(lineFrom, i);
 		const maskedLine = masked.slice(lineFrom, i);
 		const blank = maskedLine.trim() === "";
+		const previousEnd = lineFrom > 0 ? lineFrom - 1 : lineFrom;
+		const quote = quoteOf(raw);
 
 		if (blank) {
-			flush(lineFrom > 0 ? lineFrom - 1 : lineFrom);
+			flush(previousEnd);
+		} else if (quote.depth > 0 && /^\[![^\]\n]{1,40}\]/.test(quote.body)) {
+			// A callout's first line is its TITLE, a heading: it never joins the body below it.
+			flush(previousEnd);
+			blocks.push({ from: lineFrom, to: i });
+			blockQuote = -1;
+		} else if (quote.depth > 0) {
+			// Quote lines at one depth are one paragraph: pressing Enter inside a callout used to
+			// split every wrapped line into its own "sentence", which shrank the average and hid
+			// long sentences. A quoted list item or heading still starts its own block.
+			if (start === -1 || blockQuote !== quote.depth || STANDALONE_LINE.test(quote.body)) {
+				flush(previousEnd);
+				start = lineFrom;
+			}
+			blockQuote = quote.depth;
+		} else if (LIST_ITEM_LINE.test(raw)) {
+			// A list item starts a block that its own wrapped lines (indented or lazy) join. Two
+			// items never merge: the next item starts the next block.
+			flush(previousEnd);
+			start = lineFrom;
+			blockQuote = -1;
 		} else if (STANDALONE_LINE.test(raw)) {
-			flush(lineFrom > 0 ? lineFrom - 1 : lineFrom);
+			flush(previousEnd);
 			blocks.push({ from: lineFrom, to: i });
 		} else if (start === -1) {
 			start = lineFrom;
+			blockQuote = -1;
 		}
 
 		if (atEnd) {

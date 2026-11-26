@@ -146,6 +146,13 @@ for (const rule of Object.keys(DEFAULT_RULE_OPTIONS.rules)) {
 		plugin.settings.veryLongSentenceWords > plugin.settings.longSentenceWords,
 		"very-long must stay above long"
 	);
+	// 1.1.3: and the very-long SLIDER shows the value in force, not the one it was left on.
+	assert.equal(sliders[1].value, plugin.settings.veryLongSentenceWords, "the pushed slider moves too");
+
+	// Dragging "very long" below "long" snaps its handle back to the clamp.
+	sliders[1].drag(30);
+	assert.equal(plugin.settings.veryLongSentenceWords, plugin.settings.longSentenceWords + 1);
+	assert.equal(sliders[1].value, plugin.settings.veryLongSentenceWords, "the handle snaps to the clamp");
 }
 
 console.log("ok  settings-tab.test.ts");

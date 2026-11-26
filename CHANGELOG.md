@@ -4,6 +4,57 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.3] - 2026-11-26
+
+Hardening from adversarial review rounds with two outside models. Every fix has a regression
+test, and a random-Markdown fuzzer now checks that the mask never moves an offset.
+
+### Fixed
+- **Prose no longer vanishes after some code blocks.** A fence opened on a list item's own
+  line (`- ```js`, including task items), a fence under a list item that was not closed yet,
+  and a `>` line inside a list fence each used to hide every paragraph after them.
+- A `<!--`, `$$` or stray backtick inside a code fence no longer pairs with text after the
+  fence and hides it.
+- Obsidian `%%comments%%` are skipped, inline or across lines. Reading view hides them, so
+  they no longer move the grade or collect marks.
+- A wikilink alias (`[[Note|the words you see]]`) is analysed as part of its sentence. The
+  link target is still skipped.
+- A setext heading (text above a `===` or `---` line) is treated as a heading, not prose. A
+  `---` under a list is still a divider, and the list stays prose.
+- Indented code inside a list item is skipped.
+- A line that merely starts with `|` is prose. Row-shaped lines are still skipped as a table.
+- An escaped backtick (`` \` ``) no longer opens a code span.
+- A full stop after a bare URL ends the sentence, instead of merging it with the next one.
+- A list item or quote wrapped across lines is one sentence again, not one per line, so the
+  grade and the long-sentence rule see what you wrote. A callout title stays separate.
+- Passive voice and phrase marks never reach across inline code (``was `x` deleted``), and
+  they do reach across emphasis and links (`was **quietly** dropped`, `was [rejected](url)`).
+  Phrases no longer run across a paragraph break.
+- Passive voice no longer fires on states: "was born", "were done by noon", "were gone",
+  "got married". With an agent ("done by the contractors") it still does.
+- Contracted passives are marked: "you're invited by Sam", "it's written by Alice". A bare
+  "he's assigned a task" is left alone, because `'s` there means "has".
+- Right-click "Stop marking" right after typing offers the mark under the cursor, not the
+  one that used to sit there. The menu now says "an adverb", not "a adverb".
+- The free panel's de-slop count matches what Pro would mark. It used to count ignored
+  phrases and phrases already inside another mark.
+- "Since you opened this note" no longer reports changes you did not make after unlocking
+  Pro, switching a rule, or ignoring a word. The opening text is re-scored under the new
+  settings.
+- Deleting a note clears its cached analysis and baseline, so a new note at the same path
+  starts clean.
+- Focus mode no longer un-dims the whole note when the cursor sits between sentences, on a
+  blank line, or in a heading.
+- The reading-ease label uses Flesch's own bands (65 is "Standard", not "Easy").
+- The two sentence-length sliders always show the thresholds actually in force.
+- Clicking an echo walks through its occurrences, instead of jumping to the first one.
+
+### Performance
+- Toggling the status bar, hiding Pro sections, or typing a license key no longer makes
+  every open note re-analyse itself.
+- The rhythm map draws at most 600 bars. On longer notes each bar shows the longest sentence
+  in its stretch, so a note of tens of thousands of short lines no longer stalls the panel.
+
 ## [1.1.2] - 2026-11-21
 
 Fixes from a multi-model review of 1.1.1.

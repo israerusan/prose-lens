@@ -68,4 +68,9 @@ export interface Analysis {
 	 * without re-reading the editor and re-masking the whole note on every keystroke.
 	 */
 	masked: string;
+	/**
+	 * The text that was analysed. A reference to the string the editor already built, not a
+	 * copy; the panel's phrase passes need it to tell real whitespace from masked syntax.
+	 */
+	source: string;
 }

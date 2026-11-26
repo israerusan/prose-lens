@@ -143,6 +143,47 @@ export function normalizeSettings(raw: unknown): ProseLensSettings {
 	};
 }
 
+/**
+ * What the rule engine is given. One builder, so the editor's live analysis and the delta
+ * baseline's re-analysis cannot drift apart on what "the same settings" means.
+ */
+export function analysisOptions(settings: ProseLensSettings): {
+	rules: Record<string, boolean>;
+	longSentenceWords: number;
+	veryLongSentenceWords: number;
+	ignoredWords: string[];
+	isPro: boolean;
+} {
+	return {
+		rules: settings.rules,
+		longSentenceWords: settings.longSentenceWords,
+		veryLongSentenceWords: settings.veryLongSentenceWords,
+		ignoredWords: settings.ignoredWords,
+		isPro: settings.isPro,
+	};
+}
+
+/** A stable key for {@link analysisOptions}: equal keys mean identical analyses of equal text. */
+export function analysisSignature(settings: ProseLensSettings): string {
+	return JSON.stringify(analysisOptions(settings));
+}
+
+/**
+ * A stable key for everything an open editor renders from. Settings outside it — the status
+ * bar toggle, hiding Pro sections, the welcome flag, a license key that changed nothing —
+ * never touch an editor, and must not make every open note re-analyse itself.
+ */
+export function editorSignature(settings: ProseLensSettings): string {
+	return JSON.stringify([
+		analysisOptions(settings),
+		settings.marksEnabled,
+		settings.sentenceHeat,
+		settings.focusMode,
+		settings.mutedPaths,
+		settings.maxNoteChars,
+	]);
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }

@@ -3,7 +3,7 @@ import type ProseLensPlugin from "../main";
 import type { Analysis } from "../core/types.d.mts";
 import { rhythm } from "../core/rhythm.mjs";
 import { findEchoes } from "../core/echo.mjs";
-import { findSlop } from "../core/deslop.mjs";
+import { countDeslopMarks } from "../core/ruleEngine.mjs";
 import type { Echo } from "../core/echo.d.mts";
 import { diffSnapshots, hasMoved, snapshot } from "../core/delta.mjs";
 import { easeLabel } from "../core/readability.mjs";
@@ -30,6 +30,9 @@ export const VIEW_TYPE_PROSE_PANEL = "prose-lens-panel";
  */
 const echoCache = new WeakMap<Analysis, Echo[]>();
 
+/** Most rhythm bars the panel draws; longer notes are binned (see renderRhythm). */
+const MAX_RHYTHM_BARS = 600;
+
 /**
  * De-slop counts for free users, keyed by the analysis that produced them.
  *
@@ -45,12 +48,13 @@ const echoCache = new WeakMap<Analysis, Echo[]>();
  */
 const deslopCache = new WeakMap<Analysis, number>();
 
-function countSlop(analysis: Analysis): number {
+function countSlop(analysis: Analysis, ignoredWords: readonly string[]): number {
 	const cached = deslopCache.get(analysis);
 	if (cached !== undefined) return cached;
 	// The masked text rides along on the analysis, so this is one token scan — no second read
-	// of the editor and no second mask of the note.
-	const count = findSlop(analysis.masked, analysis.sentences).length;
+	// of the editor and no second mask of the note. It counts what Pro would actually PAINT
+	// (after ignores and overlaps), not raw matches: the two numbers used to disagree.
+	const count = countDeslopMarks(analysis, ignoredWords);
 	deslopCache.set(analysis, count);
 	return count;
 }
@@ -104,6 +108,11 @@ export class ProsePanelView extends ItemView {
 			const ruleRow = target.closest<HTMLElement>("[data-pl-rule]");
 			if (ruleRow?.dataset.plRule) {
 				this.jumpToRule(ruleRow.dataset.plRule);
+				return;
+			}
+			const echoRow = target.closest<HTMLElement>("[data-pl-echo]");
+			if (echoRow?.dataset.plEcho) {
+				this.jumpToEcho(echoRow.dataset.plEcho);
 				return;
 			}
 			const row = target.closest<HTMLElement>("[data-pl-target]");
@@ -192,7 +201,7 @@ export class ProsePanelView extends ItemView {
 		const heading = section.createEl("h3", { text: "Filler and AI-isms" });
 		heading.createSpan({ cls: "pl-pro-pill", text: "Pro" });
 
-		const count = countSlop(analysis);
+		const count = countSlop(analysis, settings.ignoredWords);
 		if (count === 0) {
 			section.createDiv({ cls: "pl-empty", text: "No filler phrases found in this note." });
 			return;
@@ -287,6 +296,21 @@ export class ProsePanelView extends ItemView {
 		this.plugin.revealOffset(offsets[next]);
 	}
 
+	/**
+	 * Walk the occurrences of one echoed term, cycling like the legend does. An echo row used
+	 * to open the FIRST hit every time, so "system" eight times was one click target, not eight.
+	 */
+	private jumpToEcho(term: string): void {
+		const analysis = this.plugin.currentAnalysis();
+		if (!analysis) return;
+		const offsets = echoCache.get(analysis)?.find((echo) => echo.term === term)?.offsets ?? [];
+		if (offsets.length === 0) return;
+		const key = `echo:${term}`;
+		const next = ((this.ruleCursor.get(key) ?? -1) + 1) % offsets.length;
+		this.ruleCursor.set(key, next);
+		this.plugin.revealOffset(offsets[next]);
+	}
+
 	/** Register a click target and return the index to stamp on the row. */
 	private target(offset: number): string {
 		this.targets.push(offset);
@@ -332,7 +356,19 @@ export class ProsePanelView extends ItemView {
 			if (length > longest) longest = length;
 		}
 		const map = section.createDiv({ cls: "pl-rhythm" });
-		result.lengths.forEach((length, index) => {
+		// One bar per sentence, up to a ceiling. Past it, each bar stands for a run of
+		// consecutive sentences and shows the LONGEST of them (with that sentence's band), so a
+		// wall of long sentences can never be averaged away. A 300,000-character note of short
+		// lines is tens of thousands of sentences, and rebuilding that many elements on every
+		// typing pause froze the panel.
+		const step = Math.max(1, Math.ceil(result.lengths.length / MAX_RHYTHM_BARS));
+		for (let first = 0; first < result.lengths.length; first += step) {
+			let index = first;
+			const last = Math.min(result.lengths.length, first + step);
+			for (let k = first + 1; k < last; k++) {
+				if (result.lengths[k] > result.lengths[index]) index = k;
+			}
+			const length = result.lengths[index];
 			const bar = map.createDiv({ cls: `pl-bar pl-bar-${result.bands[index]}` });
 			// The bar length IS the data — it cannot live in styles.css. It is published as a
 			// CSS custom property, which a theme can still override, rather than as a raw
@@ -346,10 +382,12 @@ export class ProsePanelView extends ItemView {
 			bar.setCssProps({
 				"--pl-bar-width": `${Math.max(4, Math.round((length / longest) * 100))}%`,
 			});
-			bar.setAttr("aria-label", `${length} words`);
-			bar.setAttr("title", `${length} words`);
+			const label =
+				step === 1 ? `${length} words` : `Sentences ${first + 1}–${last}: longest ${length} words`;
+			bar.setAttr("aria-label", label);
+			bar.setAttr("title", label);
 			bar.dataset.plTarget = this.target(analysis.sentences[index].from);
-		});
+		}
 
 		const flat = result.monotoneRuns.reduce((total, run) => total + run.length, 0);
 		section.createDiv({
@@ -375,7 +413,7 @@ export class ProsePanelView extends ItemView {
 		// editor and no second mask of the whole note here.
 		let echoes = echoCache.get(analysis);
 		if (!echoes) {
-			echoes = findEchoes(analysis.masked, analysis.sentences);
+			echoes = findEchoes(analysis.masked, analysis.sentences, undefined, analysis.source);
 			echoCache.set(analysis, echoes);
 		}
 
@@ -389,7 +427,8 @@ export class ProsePanelView extends ItemView {
 			const row = list.createDiv({ cls: "pl-echo" });
 			row.createSpan({ cls: "pl-echo-term", text: echo.term });
 			row.createSpan({ cls: "pl-echo-count", text: `${echo.count}×` });
-			row.dataset.plTarget = this.target(echo.offsets[0]);
+			row.dataset.plEcho = echo.term;
+			row.setAttr("aria-label", `${echo.count} times — go to the next one`);
 		}
 	}
 

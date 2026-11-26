@@ -13,6 +13,7 @@ import { segmentSentences, words } from "./segment.mjs";
 import { computeStats } from "./readability.mjs";
 import { findPassive } from "./passive.mjs";
 import { findSlop } from "./deslop.mjs";
+import { hidesWords, visibleGapLength } from "./gap.mjs";
 import { isProOnlyRule } from "./featureGates.mjs";
 import {
 	ADVERB_EXCEPTIONS,
@@ -168,7 +169,7 @@ export function analyze(text, options = {}) {
 		}
 
 		if (enabled("passive")) {
-			for (const span of findPassive(masked, sentence)) {
+			for (const span of findPassive(masked, sentence, source)) {
 				// A modal passive ("this should be flagged") is the register of instructions and
 				// checklists, which is a lot of what lives in a vault. Still passive, still
 				// marked — but at the quietest severity, so the tool does not appear to be
@@ -191,7 +192,7 @@ export function analyze(text, options = {}) {
 		marks.push(...findPhrases(source, masked, activePhraseRules));
 	}
 	if (enabled("deslop")) {
-		marks.push(...findSlop(masked, sentences));
+		marks.push(...findSlop(masked, sentences, source));
 	}
 
 	marks = applyIgnores(marks, opts.ignoredWords);
@@ -202,7 +203,31 @@ export function analyze(text, options = {}) {
 	const counts = {};
 	for (const mark of marks) counts[mark.rule] = (counts[mark.rule] ?? 0) + 1;
 
-	return { marks, masked, sentences, stats: computeStats(sentences, counts) };
+	return { marks, masked, source, sentences, stats: computeStats(sentences, counts) };
+}
+
+/**
+ * How many de-slop marks Pro WOULD paint on a free analysis — the free panel's count.
+ *
+ * It used to be the raw `findSlop` total, so it counted phrases the user had ignored and
+ * phrases swallowed by an enclosing mark ("was meticulously crafted" is one passive mark,
+ * not a passive plus a de-slop word): free said "1 matching phrase" where Pro shows none.
+ * Running the same ignore and overlap passes the real analysis runs gives the same number.
+ * That is exact, not an estimate: a free mark missing from `analysis.marks` was dropped by a
+ * container that also contains anything it would have contained.
+ *
+ * @param {import("./types.d.mts").Analysis} analysis a free analysis (no deslop marks in it)
+ * @param {ReadonlyArray<string>} [ignoredWords]
+ * @returns {number}
+ */
+export function countDeslopMarks(analysis, ignoredWords = []) {
+	const slop = applyIgnores(
+		findSlop(analysis.masked, analysis.sentences, analysis.source),
+		ignoredWords
+	);
+	if (slop.length === 0) return 0;
+	const others = analysis.marks.filter((mark) => mark.rule !== "deslop");
+	return resolveOverlaps([...others, ...slop]).filter((mark) => mark.rule === "deslop").length;
 }
 
 /**
@@ -256,7 +281,10 @@ function findPhrases(source, masked, ruleEntries) {
 				// straight across the code. Same invariant the doubled-word rule enforces.
 				const from = wordList[i + t - 1].to;
 				const until = wordList[i + t].from;
-				if (until - from > 8 || /\S/.test(source.slice(from, until))) {
+				// A blank line is a paragraph break, and no phrase reads across one. Masked SYNTAX
+				// is allowed ("at the **end** of the day", "at the [end](url) of the day"), but a
+				// hidden word — code, math, a URL — or visible punctuation is not.
+				if (until - from > 320 || (until - from > 8 && visibleGapLength(source, masked, from, until) > 8) || !proseGap(source, masked, from, until)) {
 					ok = false;
 					break;
 				}
@@ -277,6 +305,23 @@ function findPhrases(source, masked, ruleEntries) {
 		i += best.tokens.length - 1;
 	}
 	return found;
+}
+
+/**
+ * True when [from, to) between two words of a phrase is whitespace to the reader: at most
+ * one line break, nothing visible in the masked text, and no words the mask hid (gap.mjs).
+ */
+function proseGap(source, masked, from, to) {
+	let newlines = 0;
+	for (let i = from; i < to; i++) {
+		const char = masked[i];
+		if (char === "\n") {
+			if (++newlines > 1) return false;
+			continue;
+		}
+		if (char !== " " && char !== "\t" && char !== "\r") return false;
+	}
+	return !hidesWords(source, masked, from, to);
 }
 
 /**

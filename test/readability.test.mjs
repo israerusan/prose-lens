@@ -68,5 +68,8 @@ assert.equal(stats.counts.adverb, 2);
 // --- labels ----------------------------------------------------------------------
 assert.equal(easeLabel(90), "Very easy");
 assert.equal(easeLabel(20), "Very hard");
+assert.equal(easeLabel(65), "Standard");
+assert.equal(easeLabel(85), "Easy");
+assert.equal(easeLabel(75), "Fairly easy");
 
 console.log("ok  readability.test.mjs");

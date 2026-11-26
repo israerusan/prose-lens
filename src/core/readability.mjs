@@ -56,10 +56,16 @@ export function computeStats(sentences, counts = {}) {
 	};
 }
 
-/** Plain-English label for a reading-ease score — friendlier than a bare number. */
+/**
+ * Plain-English label for a reading-ease score, on Flesch's own published bands. The number
+ * sits right next to the word in the panel, so the word has to be the one a reader would find
+ * if they looked the scale up: 65 is "Standard", not "Easy".
+ */
 export function easeLabel(flesch) {
-	if (flesch >= 80) return "Very easy";
-	if (flesch >= 60) return "Easy";
+	if (flesch >= 90) return "Very easy";
+	if (flesch >= 80) return "Easy";
+	if (flesch >= 70) return "Fairly easy";
+	if (flesch >= 60) return "Standard";
 	if (flesch >= 50) return "Fairly hard";
 	if (flesch >= 30) return "Hard";
 	return "Very hard";

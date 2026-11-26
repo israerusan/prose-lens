@@ -172,3 +172,26 @@ assert.equal(
 	still.command("next-mark")(false);
 	assert.notEqual(still.revealed[0], first, "without drift the cursor is already past the first mark");
 }
+
+// --- 1.1.3: right-click maps stale mark offsets into the current document -----------------------
+// Typing above a mark moves it, but the analysis is a debounce window old. The menu compared the
+// CURRENT cursor with STALE offsets and offered to ignore whatever mark used to sit there.
+{
+	const text = "This is clearly fine and the plan works.";
+	// Five characters were typed in front of everything since the analysis ran: the word under
+	// the cursor at the OLD offset of "clearly" is now something else, and "clearly" is 5 later.
+	const at = text.indexOf("clearly") + 1;
+	const stale = setup(text, at, {}, 5);
+	assert.equal(stale.openMenu().length, 0, "no mark sits under the cursor any more");
+	const moved = setup(text, at + 5, {}, 5);
+	assert.equal(moved.openMenu().length, 1, "the mark is found where it moved to");
+}
+
+// --- 1.1.3: the menu's article agrees with the rule name ("an adverb", never "a adverb") --------
+{
+	const text = "She walked slowly home.";
+	const { openMenu } = setup(text, text.indexOf("slowly") + 2);
+	const items = openMenu();
+	assert.equal(items.length, 1);
+	assert.match(items[0].title, /as an adverb$/);
+}

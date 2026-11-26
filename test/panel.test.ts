@@ -320,3 +320,37 @@ function mount(
 }
 
 console.log("ok  panel.test.ts");
+
+// --- 1.1.3: the free de-slop count is what Pro would PAINT, not raw matches ---------------------
+// "meticulously crafted" sits inside a passive mark, so Pro paints no de-slop mark there; the free
+// panel used to say "1 matching phrase" anyway. Ignored phrases were counted too.
+{
+	const swallowed = mount({ isPro: false }, "The report was meticulously crafted.");
+	assert.ok(swallowed.root.text().includes("No filler phrases found"), swallowed.root.text());
+
+	const text = "It is worth noting that we left early.";
+	const free = mount({ isPro: false }, text);
+	const pro = analyze(text, { isPro: true });
+	const painted = pro.marks.filter((mark) => mark.rule === "deslop").length;
+	assert.ok(painted > 0, "test bug: the sample must carry a de-slop mark");
+	assert.ok(
+		free.root.text().includes(`${painted} matching phrase`),
+		`free count must equal Pro's ${painted}: ${free.root.text()}`
+	);
+
+	const ignored = mount({ isPro: false, ignoredWords: ["it is worth noting"] }, text);
+	assert.ok(ignored.root.text().includes("No filler phrases found"), "an ignored phrase is not counted");
+}
+
+// --- 1.1.3: the rhythm map is capped, and binning keeps the longest sentence ---------------------
+{
+	const many = "One two three. ".repeat(3000) + "This one sentence is much longer than every other one here.";
+	const { root } = mount({ isPro: false }, many);
+	const bars = root.findAll((el) => el.hasClass("pl-bar"));
+	assert.ok(bars.length <= 600, `rhythm bars are capped (got ${bars.length})`);
+	assert.ok(bars.length >= 500, "the cap still shows a dense map");
+	assert.ok(
+		bars.some((bar) => bar.cssProps["--pl-bar-width"] === "100%"),
+		"the longest sentence survives binning"
+	);
+}

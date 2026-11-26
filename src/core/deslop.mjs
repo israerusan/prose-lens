@@ -13,6 +13,7 @@
  */
 
 import { words } from "./segment.mjs";
+import { hidesWords, visibleGapLength } from "./gap.mjs";
 import { DESLOP_PHRASES, DESLOP_WORDS } from "./wordlists.mjs";
 
 const RULE = "deslop";
@@ -27,6 +28,7 @@ const REFRAME_MESSAGE = 'The "not just X, it\'s Y" reframing is a machine-prose 
  * a different clause and must not glue a phrase together across it.
  */
 const MAX_GAP = 8;
+const MAX_RAW_GAP = 320;
 
 /**
  * The reframing construction. The gap is bounded and excludes `.` and `;` so a match
@@ -84,18 +86,32 @@ function buildTables() {
 
 const { single: SINGLE, multi: MULTI } = buildTables();
 
-/** Only whitespace, and not too much of it, may sit between two words of a phrase. */
-function gapIsTight(masked, from, to) {
-	if (to - from > MAX_GAP) return false;
+/**
+ * Only whitespace, and not too much of it, may sit between two words of a phrase. A blank
+ * line is a paragraph break, and no phrase reads across one.
+ *
+ * The SOURCE is checked too: masked text turns a code span into spaces, so "It is worth `x`
+ * noting" used to read as one phrase and paint a mark across the code. Only hidden WORDS
+ * block, though — masked syntax the reader never sees as text (emphasis, link brackets, a
+ * quote's `>`) does not, so "It is **worth** noting" and "worth [noting](url)" still match.
+ */
+function gapIsTight(masked, source, from, to) {
+	if (to - from > MAX_RAW_GAP) return false;
+	if (to - from > MAX_GAP && visibleGapLength(source, masked, from, to) > MAX_GAP) return false;
+	let newlines = 0;
 	for (let i = from; i < to; i++) {
 		const char = masked[i];
-		if (char !== " " && char !== "\t" && char !== "\n" && char !== "\r") return false;
+		if (char === "\n") {
+			if (++newlines > 1) return false;
+			continue;
+		}
+		if (char !== " " && char !== "\t" && char !== "\r") return false;
 	}
-	return true;
+	return !hidesWords(source, masked, from, to);
 }
 
 /** Longest list entry starting at token `i`, or null. */
-function matchAt(masked, tokens, lowered, i) {
+function matchAt(masked, gapText, tokens, lowered, i) {
 	const bucket = MULTI.get(lowered[i]);
 	if (!bucket) return null;
 
@@ -108,7 +124,7 @@ function matchAt(masked, tokens, lowered, i) {
 				ok = false;
 				break;
 			}
-			if (!gapIsTight(masked, tokens[i + k - 1].to, tokens[i + k].from)) {
+			if (!gapIsTight(masked, gapText, tokens[i + k - 1].to, tokens[i + k].from)) {
 				ok = false;
 				break;
 			}
@@ -119,7 +135,7 @@ function matchAt(masked, tokens, lowered, i) {
 }
 
 /** Reframing matches, de-overlapped: three patterns can all cover one construction. */
-function findReframes(masked) {
+function findReframes(masked, source) {
 	const hits = [];
 	for (const pattern of REFRAME_PATTERNS) {
 		pattern.lastIndex = 0;
@@ -129,6 +145,9 @@ function findReframes(masked) {
 				pattern.lastIndex++;
 				continue;
 			}
+			// "It is not just `x` but also wrong": the frame straddles code the writer did not
+			// write as prose, so it is not a reframe they can fix.
+			if (hidesWords(source, masked, match.index, match.index + match[0].length)) continue;
 			hits.push({ from: match.index, to: match.index + match[0].length });
 		}
 	}
@@ -155,10 +174,12 @@ function findReframes(masked) {
  *
  * @param {string} masked masked text (see mask.mjs) — offsets are document offsets
  * @param {import("./types.d.mts").Sentence[]} [sentences]
+ * @param {string} [source] the unmasked text, same length — phrase gaps are judged on it
  * @returns {import("./types.d.mts").Mark[]}
  */
-export function findSlop(masked, sentences) {
+export function findSlop(masked, sentences, source) {
 	if (typeof masked !== "string" || masked.length === 0) return [];
+	const gapText = typeof source === "string" && source.length === masked.length ? source : masked;
 
 	/** @type {import("./types.d.mts").Mark[]} */
 	const marks = [];
@@ -166,7 +187,7 @@ export function findSlop(masked, sentences) {
 	const lowered = tokens.map((token) => normalize(token.text));
 
 	for (let i = 0; i < tokens.length; i++) {
-		const phrase = matchAt(masked, tokens, lowered, i);
+		const phrase = matchAt(masked, gapText, tokens, lowered, i);
 		if (phrase) {
 			const last = i + phrase.tokens.length - 1;
 			marks.push({
@@ -217,7 +238,7 @@ export function findSlop(masked, sentences) {
 		}
 	}
 
-	marks.push(...findReframes(masked));
+	marks.push(...findReframes(masked, gapText));
 	marks.sort((a, b) => a.from - b.from || a.to - b.to);
 	return marks;
 }
